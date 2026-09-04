@@ -1,0 +1,45 @@
+{
+  "name": "country-made-in",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Chrome Extension (Manifest V3) showing product origin transparency on Amazon",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint src/ test/",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write src/ test/ *.config.* tsconfig*.json .prettierrc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mbates/country-made-in.git"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "2.7.1",
+    "@eslint/js": "9.28.0",
+    "@tailwindcss/vite": "4.2.2",
+    "@types/chrome": "0.1.38",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "5.1.4",
+    "eslint": "9.28.0",
+    "eslint-plugin-react-hooks": "7.0.1",
+    "prettier": "3.8.4",
+    "tailwindcss": "4.3.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.57.1",
+    "vite": "7.3.6",
+    "vitest": "4.1.1"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
