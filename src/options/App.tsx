@@ -7,7 +7,12 @@ export function App() {
       <p className="text-slate-600">There is nothing to configure yet.</p>
       <footer className="border-t border-slate-200 pt-4 text-sm text-slate-500">
         Built by{' '}
-        <a className="underline" href="https://bates-solutions.com" target="_blank" rel="noreferrer">
+        <a
+          className="underline"
+          href="https://bates-solutions.com"
+          target="_blank"
+          rel="noreferrer"
+        >
           Bates Solutions Inc
         </a>
       </footer>
