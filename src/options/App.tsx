@@ -1,6 +1,6 @@
-const { name } = chrome.runtime.getManifest()
-
 export function App() {
+  const { name } = chrome.runtime.getManifest()
+
   return (
     <main className="mx-auto max-w-2xl space-y-4 p-8 font-sans text-slate-800">
       <h1 className="text-xl font-semibold">{name} — settings</h1>
