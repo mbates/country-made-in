@@ -7,3 +7,13 @@ updates:
     versioning-strategy: "increase"
     commit-message:
       prefix: "deps"
+    groups:
+      # react and react-dom must move together or React throws #527 at mount and the
+      # page renders blank. save-exact=true pins both, so an ungrouped bump of one is
+      # a broken build that still compiles, lints, typechecks and passes unit tests.
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
