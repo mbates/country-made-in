@@ -1,0 +1,22 @@
+{
+  "url": "https://www.amazon.ca/FURHAB-Dispenser-Carabiner-Bone-Shaped-Portable/dp/B09ZP3WS5G",
+  "capturedAt": "2026-09-04",
+  "read": {
+    "label": "Country of Publication",
+    "rawText": "China"
+  },
+  "expect": {
+    "fields": [
+      {
+        "label": "Country of Publication",
+        "rawText": "China",
+        "kind": "manufactured",
+        "confidence": "low"
+      }
+    ],
+    "claims": {
+      "manufactured": { "country": "CN", "confidence": "low", "agreement": "single-source" }
+    }
+  },
+  "note": "The only origin-ish field is 'Country of Publication' — a media attribute the seller applied to a dog waste bag holder. Accepted at low confidence: the value is almost certainly the origin, but the label does not actually assert manufacture. The prior extension reported 'Not found' on this page."
+}
