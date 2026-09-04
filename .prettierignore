@@ -1,0 +1,7 @@
+# Fixtures are captured page markup, kept exactly as the browser produced it.
+# Reformatting them changes the whitespace the extractor reads, so the thing under
+# test would no longer be the thing that was captured.
+test/fixtures/
+
+# Generated — see scripts/generate-countries.mjs
+dist/
