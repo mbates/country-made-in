@@ -1,0 +1,22 @@
+# Working docs stay local — plans, prior-art notes, reference material.
+/docs/
+
+# Backstop for third-party material. The "Made in Where" extension ships no
+# licence and is all-rights-reserved; it lives in docs/reference/ for analysis
+# only. A stray copy outside docs/ would be a licence problem, so refuse these
+# everywhere regardless.
+*.crx
+*.zip
+
+# Build output / deps
+node_modules/
+dist/
+.vite/
+
+# Local environment
+*.local
+.env
+
+# Extension signing key — pins the extension ID; keep private, never commit
+key.pem
+*.pem
