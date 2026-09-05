@@ -3,6 +3,7 @@ import {
   CACHE_VERSION,
   MAX_ENTRIES,
   OriginCache,
+  TOUCH_GRANULARITY_MS,
   TTL_HIT_MS,
   TTL_MISS_MS,
   evict,
@@ -38,10 +39,12 @@ const miss = (): OriginVerdict => ({
 
 class FakeStorage implements StorageArea {
   data: Record<string, unknown> = {}
+  writes = 0
   async get(keys: string[]) {
     return Object.fromEntries(keys.filter((k) => k in this.data).map((k) => [k, this.data[k]]))
   }
   async set(items: Record<string, unknown>) {
+    this.writes += 1
     Object.assign(this.data, items)
   }
 }
@@ -169,7 +172,8 @@ describe('recency', () => {
   it('a read protects an entry from eviction', async () => {
     const c = cache()
     await c.put(KEY, hit())
-    clock += 1000
+    // Past the granularity window, so recency is actually written back.
+    clock += TOUCH_GRANULARITY_MS + 1
     await c.get(KEY)
     const entries = storage.data['origin-cache'] as Record<string, CacheEntry>
     expect(entries[productCacheKey(KEY)].usedAt).toBe(clock)
@@ -183,5 +187,39 @@ describe('clear', () => {
     await c.clear()
     expect(await c.get(KEY)).toBeNull()
     expect(storage.data['gtin-index']).toEqual({})
+  })
+})
+
+describe('regressions from review of PR #13', () => {
+  it('re-keys a GTIN hit to the page the user is actually on', async () => {
+    // Returning the stored verdict verbatim had the panel attribute evidence to another
+    // marketplace, with a "check it yourself" link pointing at a different listing.
+    await cache().put({ marketplace: 'amazon.ca', asin: 'B000000001', gtin: 'G1' }, hit())
+    const here = { marketplace: 'amazon.de', asin: 'B000000002', gtin: 'G1' } as const
+    const verdict = await cache().get(here)
+    expect(verdict?.productKey).toEqual(here)
+  })
+
+  it("leaves a direct hit's key alone", async () => {
+    await cache().put(KEY, hit())
+    expect((await cache().get(KEY))?.productKey).toEqual(KEY)
+  })
+
+  it('does not rewrite the whole cache on every read', async () => {
+    const c = cache()
+    await c.put(KEY, hit())
+    const before = storage.writes
+    await c.get(KEY)
+    await c.get(KEY)
+    expect(storage.writes).toBe(before)
+  })
+
+  it('does record recency once the granularity window passes', async () => {
+    const c = cache()
+    await c.put(KEY, hit())
+    const before = storage.writes
+    clock += TOUCH_GRANULARITY_MS + 1
+    await c.get(KEY)
+    expect(storage.writes).toBe(before + 1)
   })
 })

@@ -52,17 +52,32 @@ export function observeListing(
     clearTimeoutFn = clearTimeout,
   }: ObserveOptions = {}
 ): () => void {
-  const container =
+  const findContainer = (): ParentNode & Node =>
     RESULT_CONTAINERS.map((selector) => root.querySelector(selector)).find(Boolean) ?? root
 
-  const seen = new Set<string>()
+  let container = findContainer()
+
+  // Tracked by element, not just by ASIN. Amazon applies a sort or filter by replacing
+  // the contents of the results slot without navigating, so the same product comes back
+  // as a new element — and anything plan 04 attached to the old one is gone. Reporting
+  // it again is what lets the badge be reattached.
+  const seen = new WeakSet<Element>()
   let timer: ReturnType<typeof setTimeout> | null = null
 
   const flush = () => {
     timer = null
-    const fresh = tilesIn(container).filter((tile) => !seen.has(tile.asin))
+
+    // If the slot itself was swapped, the observer is watching a detached node and would
+    // never fire again. Re-resolve and reattach rather than stopping silently.
+    if (!root.contains(container) && container !== root) {
+      container = findContainer()
+      observer.disconnect()
+      observer.observe(container as Node, { childList: true, subtree: true })
+    }
+
+    const fresh = tilesIn(container).filter((tile) => !seen.has(tile.element))
     if (fresh.length === 0) return
-    for (const tile of fresh) seen.add(tile.asin)
+    for (const tile of fresh) seen.add(tile.element)
     onTiles(fresh)
   }
 
@@ -71,10 +86,10 @@ export function observeListing(
     timer = setTimeoutFn(flush, debounceMs)
   }
 
+  const observer = new MutationObserver(schedule)
+
   // Whatever is already on the page, without waiting for a mutation.
   flush()
-
-  const observer = new MutationObserver(schedule)
   observer.observe(container as Node, { childList: true, subtree: true })
 
   return () => {

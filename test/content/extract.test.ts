@@ -2,8 +2,10 @@
 import { describe, expect, it } from 'vitest'
 import { extractOriginFields } from '../../src/content/adapters/extract'
 import { matchOriginLabel } from '../../src/content/adapters/labels'
-import { aggregate, resolveOrigin } from '../../src/shared/origin'
-import type { Evidence } from '../../src/shared/origin'
+import { OriginCache } from '../../src/shared/cache'
+import { runPassiveTier } from '../../src/content/passive'
+import type { StorageArea } from '../../src/shared/cache'
+import type { ClaimKind } from '../../src/shared/origin'
 
 const parse = (html: string) => new DOMParser().parseFromString(html, 'text/html')
 
@@ -53,33 +55,32 @@ describe('the fixture corpus', () => {
       ).toEqual(expected.expect.fields)
     })
 
-    it(`${path} produces the expected verdict`, () => {
-      const fields = extractOriginFields(parse(html))
-      const evidence: Evidence[] = fields.flatMap((field) => {
-        const resolution = resolveOrigin(field.rawText)
-        const country = resolution.status === 'resolved' ? resolution.mentions[0].country : null
-        return [
-          {
-            kind: field.kind,
-            country,
-            sourceId: field.sectionId ?? 'page',
-            sourceLabel: field.label,
-            url: expected.url,
-            quote: field.rawText,
-            confidence: field.confidence,
-            retrievedAt: '2026-09-04T00:00:00.000Z',
-          },
-        ]
-      })
+    it(`${path} produces the expected verdict`, async () => {
+      // Driven through runPassiveTier, not a local copy of its logic. A corpus that
+      // reimplements the pipeline reproduces its bugs on both sides and passes anyway.
+      const storage: StorageArea = {
+        data: {} as Record<string, unknown>,
+        async get(keys: string[]) {
+          return Object.fromEntries(
+            keys.filter((k) => k in this.data).map((k) => [k, this.data[k]])
+          )
+        },
+        async set(items: Record<string, unknown>) {
+          Object.assign(this.data, items)
+        },
+      } as StorageArea & { data: Record<string, unknown> }
 
-      const verdict = aggregate({
-        productKey: { marketplace: 'amazon.ca', asin: 'B09ZP3WS5G' },
-        evidence,
-        searchedDeep: false,
-      })
+      const result = await runPassiveTier(
+        parse(html),
+        expected.url,
+        new URL(expected.url).hostname,
+        new OriginCache(storage, () => 1_000_000_000_000),
+        () => new Date('2026-09-04T00:00:00.000Z')
+      )
 
+      expect(result, 'passive tier returned nothing').not.toBeNull()
       for (const [kind, want] of Object.entries(expected.expect.claims)) {
-        const claim = verdict.claims[kind as keyof typeof verdict.claims]
+        const claim = result!.verdict.claims[kind as ClaimKind]
         expect(claim, `no ${kind} claim`).toBeDefined()
         expect(claim?.country.code).toBe(want.country)
         expect(claim?.confidence).toBe(want.confidence)
@@ -170,5 +171,61 @@ describe('extraction shapes', () => {
   it('never returns an empty value', () => {
     const doc = parse('<table><tr><th>Country of Origin</th><td></td></tr></table>')
     expect(extractOriginFields(doc).every((f) => f.rawText.length > 0)).toBe(true)
+  })
+})
+
+describe('regressions from review of PR #13', () => {
+  it('reads a label carrying bidi marks, as Amazon writes detail bullets', () => {
+    // U+200F/U+200E around the colon. These are not whitespace, so a trailing-colon
+    // strip never reached them and the dominant amazon.com layout matched nothing.
+    const doc = parse(
+      '<div id="detailBullets_feature_div"><ul><li>' +
+        '<span class="a-text-bold">Country of Origin \u200f : \u200e</span>' +
+        '<span>China</span></li></ul></div>'
+    )
+    expect(extractOriginFields(doc)[0]).toMatchObject({ rawText: 'China', kind: 'manufactured' })
+  })
+
+  it('matches a bidi-marked label directly', () => {
+    expect(matchOriginLabel('Country of Origin \u200f : \u200e')?.kind).toBe('manufactured')
+  })
+
+  it('does not invent a second field from a nested table', () => {
+    // The outer row used to match the inner table's label against its own cell, turning
+    // one stated fact into two sources and reporting it as corroboration.
+    const doc = parse(
+      '<table><tr><td><table>' +
+        '<tr><th>Country of Origin</th><td>China</td></tr>' +
+        '<tr><th>Brand</th><td>Acme</td></tr>' +
+        '</table></td></tr></table>'
+    )
+    expect(extractOriginFields(doc)).toHaveLength(1)
+    expect(extractOriginFields(doc)[0].rawText).toBe('China')
+  })
+
+  it('takes the cell after the label, not the first cell in the row', () => {
+    const doc = parse(
+      '<table><tr><td>ignore me</td><th>Country of Origin</th><td>China</td></tr></table>'
+    )
+    expect(extractOriginFields(doc)[0]?.rawText).toBe('China')
+  })
+
+  it('skips an empty spacer cell to find the value', () => {
+    const doc = parse('<table><tr><th>Country of Origin</th><td></td><td>China</td></tr></table>')
+    expect(extractOriginFields(doc)[0]?.rawText).toBe('China')
+  })
+
+  it('cuts a bullet at the label, not at its length', () => {
+    const doc = parse(
+      '<ul><li><span>\u203a </span><span class="a-text-bold">Country of Origin</span> India</li></ul>'
+    )
+    expect(extractOriginFields(doc)[0]?.rawText).toBe('India')
+  })
+
+  it('does not truncate the country when the prefix is longer', () => {
+    const doc = parse(
+      '<ul><li><span>\u203a\u203a\u203a </span><span class="a-text-bold">Country of Origin</span> India</li></ul>'
+    )
+    expect(extractOriginFields(doc)[0]?.rawText).toBe('India')
   })
 })

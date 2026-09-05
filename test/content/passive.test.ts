@@ -85,7 +85,10 @@ describe('the passive tier on the real fixture', () => {
 })
 
 describe('pages with nothing to say', () => {
-  const bare = '<table><tr><th>Brand</th><td>FURHAB</td></tr></table>'
+  // A details region that rendered and simply states no origin — as opposed to one that
+  // had not loaded, which is covered in the regressions below and must not be cached.
+  const bare =
+    '<div id="prodDetails"><table class="prodDetTable"><tr><th>Brand</th><td>FURHAB</td></tr></table></div>'
 
   it('makes no claim rather than a guess', async () => {
     const result = await runPassiveTier(parse(bare), URL, HOST, cache(), at)
@@ -125,5 +128,58 @@ describe('ambiguous values', () => {
     )
     expect(evidence.country).toBeNull()
     expect(evidence.quote).toBe('China / Vietnam')
+  })
+})
+
+describe('regressions from review of PR #13', () => {
+  it('attributes manufacture to the country that was made in, not the first named', () => {
+    // mentions[0] used to win, so this reported Japan with high confidence — the exact
+    // class of confident wrong answer the project exists to eliminate.
+    const evidence = fieldToEvidence(
+      {
+        label: 'Country of Origin',
+        rawText: 'Designed in Japan, Made in China',
+        sectionId: 'prodDetails',
+        kind: 'manufactured',
+        confidence: 'high',
+      },
+      URL,
+      '2026-09-04T00:00:00.000Z'
+    )
+    expect(evidence.country?.code).toBe('CN')
+  })
+
+  it('takes an unqualified country only when it stands alone', () => {
+    const one = fieldToEvidence(
+      {
+        label: 'Country of Origin',
+        rawText: 'China',
+        sectionId: null,
+        kind: 'manufactured',
+        confidence: 'high',
+      },
+      URL,
+      '2026-09-04T00:00:00.000Z'
+    )
+    expect(one.country?.code).toBe('CN')
+  })
+
+  it('does not cache a miss when the details region never rendered', async () => {
+    const bare = parse('<div id="dp-container"><h1>A product</h1></div>')
+    const c = cache()
+    const first = await runPassiveTier(bare, URL, HOST, c, at)
+    expect(first!.verdict.claims).toEqual({})
+    // Nothing stored, so a later visit re-reads rather than repeating "not stated".
+    expect(await c.get(first!.productKey)).toBeNull()
+  })
+
+  it('still caches a miss when the details region did render', async () => {
+    const rendered = parse(
+      '<div id="prodDetails"><table><tr><th>Brand</th><td>Acme</td></tr></table></div>'
+    )
+    const c = cache()
+    const first = await runPassiveTier(rendered, URL, HOST, c, at)
+    expect(first!.verdict.claims).toEqual({})
+    expect(await c.get(first!.productKey)).not.toBeNull()
   })
 })

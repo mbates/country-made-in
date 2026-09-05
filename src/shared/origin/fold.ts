@@ -14,6 +14,14 @@
 const COMBINING_MARKS = /\p{M}/gu
 
 /**
+ * Invisible formatting characters. Amazon writes detail-bullet labels as
+ * `Country of Origin <U+200F> : <U+200E>` — bidi marks around the colon — and `\s` does
+ * not match them, so a label carrying them matches nothing at all. They have no bearing
+ * on what a string says, so they are dropped before anything compares it.
+ */
+const FORMAT_CHARS = /\p{Cf}/gu
+
+/**
  * Characters that differ only typographically. Curly quotes matter: ICU writes
  * `Côte d’Ivoire` with U+2019, while a product page will usually have an ASCII
  * apostrophe, and the two must match each other.
@@ -57,6 +65,7 @@ export function fold(input: string): Folded {
     const piece = (EQUIVALENTS[ch] ?? ch)
       .normalize('NFD')
       .replace(COMBINING_MARKS, '')
+      .replace(FORMAT_CHARS, '')
       .toLowerCase()
 
     for (const c of piece) {

@@ -1,4 +1,5 @@
 import { matchOriginLabel } from './labels'
+import { rowCells, sectionOf, text } from './dom'
 import type { ClaimKind, Confidence } from '../../shared/origin'
 
 export interface OriginField {
@@ -12,14 +13,6 @@ export interface OriginField {
   confidence: Confidence
 }
 
-const text = (node: Node | null | undefined): string =>
-  (node?.textContent ?? '').replace(/\s+/g, ' ').trim()
-
-/** Nearest ancestor carrying an id, so evidence can say where on the page it came from. */
-function sectionOf(element: Element): string | null {
-  return element.closest('[id]')?.id ?? null
-}
-
 /**
  * `<tr><th>Country of Origin</th><td>China</td></tr>`.
  *
@@ -31,26 +24,18 @@ function sectionOf(element: Element): string | null {
 function fromTableRows(root: ParentNode): OriginField[] {
   const found: OriginField[] = []
   for (const row of root.querySelectorAll('tr')) {
-    const labelCell = row.querySelector('th') ?? row.querySelector('td:first-child')
-    const valueCell = row.querySelector('th')
-      ? row.querySelector('td')
-      : row.querySelector('td + td')
-    if (!labelCell || !valueCell || labelCell === valueCell) continue
+    const cells = rowCells(row)
+    if (!cells) continue
 
-    const match = matchOriginLabel(text(labelCell))
+    const match = matchOriginLabel(text(cells.label))
     if (!match) continue
 
     // An empty cell is "not stated", not a claim. Amazon renders the label with a blank
     // value often enough that treating it as a finding would manufacture evidence.
-    const rawText = text(valueCell)
+    const rawText = text(cells.value)
     if (!rawText) continue
 
-    found.push({
-      label: text(labelCell),
-      rawText,
-      sectionId: sectionOf(row),
-      ...match,
-    })
+    found.push({ label: text(cells.label), rawText, sectionId: sectionOf(row), ...match })
   }
   return found
 }
@@ -73,11 +58,14 @@ function fromDetailBullets(root: ParentNode): OriginField[] {
       const match = matchOriginLabel(label)
       if (match) {
         const sibling = bold.nextElementSibling
+        // Cut where the label actually sits, not at its length. A bullet can open with a
+        // marker span, and slicing by length then shifts into the value — enough of a
+        // prefix and the country itself is truncated away.
+        const whole = text(item)
+        const at = whole.indexOf(label)
         const value = sibling
           ? text(sibling)
-          : text(item)
-              .slice(label.length)
-              .replace(/^[:：]\s*/, '')
+          : whole.slice(at === -1 ? label.length : at + label.length).replace(/^\s*[:：]?\s*/, '')
         if (value) found.push({ label, rawText: value, sectionId: sectionOf(item), ...match })
         continue
       }

@@ -21,9 +21,23 @@ export function productAsin(url: string): string | null {
  */
 export function fieldToEvidence(field: OriginField, url: string, at: string): Evidence {
   const resolution = resolveOrigin(field.rawText)
+
+  // Take the mention that answers *this* field's question, not simply the first country
+  // in the text. "Designed in Japan, Made in China" under a Country of Origin label names
+  // two countries, and only one of them was manufactured there; taking mentions[0] would
+  // report Japan with high confidence — the exact class of confident wrong answer this
+  // project exists to eliminate. An unqualified mention only counts when it stands alone.
+  const country =
+    resolution.status !== 'resolved'
+      ? null
+      : ((
+          resolution.mentions.find((mention) => mention.kind === field.kind) ??
+          (resolution.mentions.length === 1 ? resolution.mentions[0] : null)
+        )?.country ?? null)
+
   return {
     kind: field.kind,
-    country: resolution.status === 'resolved' ? resolution.mentions[0].country : null,
+    country,
     sourceId: field.sectionId ?? 'amazon-page',
     sourceLabel: field.label,
     url,
@@ -31,6 +45,22 @@ export function fieldToEvidence(field: OriginField, url: string, at: string): Ev
     confidence: field.confidence,
     retrievedAt: at,
   }
+}
+
+/**
+ * Whether the page rendered somewhere an origin field could have been.
+ *
+ * Distinguishes "this product states no origin" from "the details had not loaded when we
+ * looked". Only the first is worth remembering.
+ */
+export function hasDetailsRegion(doc: ParentNode): boolean {
+  return (
+    doc.querySelector(
+      '#prodDetails, #detailBullets_feature_div, #detailBulletsWrapper_feature_div, ' +
+        '#productDetails_feature_div, #productDetails_db_sections, ' +
+        '#technicalSpecifications_section_1, table.prodDetTable, .detail-bullet-list'
+    ) !== null
+  )
 }
 
 export interface PassiveResult {
@@ -71,9 +101,15 @@ export async function runPassiveTier(
   const evidence = extractOriginFields(doc).map((field) => fieldToEvidence(field, url, at))
   const verdict = aggregate({ productKey, evidence, searchedDeep: false })
 
-  // A page with no origin field is cached too, on the shorter miss TTL — otherwise the
-  // most common case is also the one that is re-parsed on every visit.
-  await cache.put(productKey, verdict)
+  // A page with no origin field is cached on the shorter miss TTL — otherwise the most
+  // common case is also the one re-parsed on every visit.
+  //
+  // But only when the details region actually rendered. The tier runs once, and storing
+  // "not stated" from a page whose details had not arrived yet would answer that product
+  // wrongly for a week, with nothing short of a CACHE_VERSION bump able to retract it.
+  if (Object.keys(verdict.claims).length > 0 || hasDetailsRegion(doc)) {
+    await cache.put(productKey, verdict)
+  }
 
   return { productKey, verdict, fromCache: false }
 }

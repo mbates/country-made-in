@@ -3,5 +3,5 @@
 # test would no longer be the thing that was captured.
 test/fixtures/
 
-# Generated — see scripts/generate-countries.mjs
+# Vite build output.
 dist/

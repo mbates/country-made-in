@@ -6,25 +6,16 @@
  * Writes `test/fixtures/<marketplace>/<asin>.html` and refuses to write anything that
  * still looks like it carries account data.
  *
- * This is a safety net, not the primary defence — `scripts/capture-fixture.js` already
- * drops form controls. It exists because fixtures captured with an older version of that
- * script would otherwise carry a live `customerId` and `aapiCsrfToken` into a public
- * repo, and because a second, independent check is cheap.
+ * This is an independent check, not a subset of `scripts/capture-fixture.js`: the
+ * captures that most need scrubbing are the ones taken with an older version of that
+ * script, or by hand, which still carry event handlers, hrefs and data attributes. So it
+ * strips attributes down to an allowlist rather than trusting the capture to have done
+ * it, and it scans the result before writing.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { JSDOM } from 'jsdom'
-
-/** Anything matching these must not survive into a committed fixture. */
-export const SENSITIVE = [
-  /customerId/i,
-  /isCustomerLoggedIn/i,
-  /csrf/i,
-  /session[-_]?id/i,
-  /\bubid\b/i,
-  /x-amz-(?:access-token|security-token)/i,
-  /sessionToken/i,
-]
+import { ALLOWED_ATTRIBUTES, findSensitive, scrubClassValue } from '../src/shared/fixture-safety.ts'
 
 const source = process.argv[2]
 if (!source) {
@@ -35,12 +26,6 @@ if (!source) {
 const raw = readFileSync(resolve(source), 'utf8')
 const dom = new JSDOM(raw)
 const { document } = dom.window
-
-for (const el of document.querySelectorAll(
-  'script, style, noscript, img, svg, iframe, form, input, select, textarea, button, option'
-)) {
-  el.remove()
-}
 
 const canonical =
   document
@@ -53,6 +38,27 @@ const asin = canonical.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/)?.[1] ?? nul
 if (!marketplace || !asin) {
   console.error(`Could not read marketplace/ASIN from the canonical URL: ${canonical || '(none)'}`)
   process.exit(1)
+}
+
+// Identity is read before scrubbing: the attribute pass removes href, canonical included.
+for (const el of document.querySelectorAll(
+  'script, style, noscript, img, svg, iframe, form, input, select, textarea, button, option'
+)) {
+  el.remove()
+}
+
+const allowed = new Set(ALLOWED_ATTRIBUTES)
+for (const el of document.querySelectorAll('*')) {
+  for (const attr of [...el.attributes]) {
+    const name = attr.name.toLowerCase()
+    if (!allowed.has(name)) {
+      el.removeAttribute(attr.name)
+    } else if (name === 'class') {
+      const cleaned = scrubClassValue(attr.value)
+      if (cleaned) el.setAttribute('class', cleaned)
+      else el.removeAttribute('class')
+    }
+  }
 }
 
 const html = `<!doctype html>
@@ -68,9 +74,9 @@ ${document.body.innerHTML}
 </html>
 `
 
-const found = SENSITIVE.filter((p) => p.test(html))
+const found = findSensitive(html)
 if (found.length > 0) {
-  console.error('Refusing to write — still matches:', found.map(String).join(', '))
+  console.error('Refusing to write — still matches:', found.map((f) => f.name).join(', '))
   process.exit(1)
 }
 

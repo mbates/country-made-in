@@ -25,6 +25,14 @@ export const TTL_MISS_MS = 7 * 24 * 60 * 60 * 1000
  */
 export const MAX_ENTRIES = 2000
 
+/**
+ * How stale an entry's `usedAt` may get before a read bothers to rewrite it.
+ *
+ * The whole cache map is one storage value, so any update rewrites all of it. Recency is
+ * only used to order eviction, and an hour's precision orders it just as well.
+ */
+export const TOUCH_GRANULARITY_MS = 60 * 60 * 1000
+
 export interface CacheEntry {
   v: number
   verdict: OriginVerdict
@@ -95,7 +103,12 @@ export class OriginCache {
       const viaGtin = mapped ? entries[mapped] : undefined
       if (viaGtin && isFresh(viaGtin, now)) {
         await this.touch(mapped, entries)
-        return viaGtin.verdict
+        // Re-key on the way out. The verdict was read off a different listing, and
+        // returning its productKey verbatim would have the panel attribute the evidence
+        // to a marketplace the user is not on — with a "check it yourself" link pointing
+        // at another listing. Reusing the answer is right; claiming it came from this
+        // page is not.
+        return { ...viaGtin.verdict, productKey: key }
       }
     }
 
@@ -120,7 +133,12 @@ export class OriginCache {
   private async touch(id: string, entries: CacheMap): Promise<void> {
     const entry = entries[id]
     if (!entry) return
-    entry.usedAt = this.now()
+    const now = this.now()
+    // Recency only has to be good enough to order LRU eviction. Writing the whole map
+    // back to storage on every cache hit costs a serialisation of every entry to update
+    // one number, so a read within the granularity window stays free.
+    if (now - entry.usedAt < TOUCH_GRANULARITY_MS) return
+    entry.usedAt = now
     await this.storage.set({ [STORE_KEY]: entries })
   }
 

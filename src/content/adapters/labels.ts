@@ -72,18 +72,27 @@ interface Resolved {
 const INDEX = new Map<string, Resolved>()
 for (const spec of ORIGIN_LABELS) {
   for (const alias of spec.aliases) {
-    INDEX.set(foldToText(alias), { kind: spec.kind, confidence: spec.confidence })
+    INDEX.set(normaliseLabel(alias), { kind: spec.kind, confidence: spec.confidence })
   }
+}
+
+/**
+ * Normalise a label for comparison.
+ *
+ * Folding strips accents and the invisible bidi marks Amazon puts around detail-bullet
+ * colons; the trailing colon is then removed with whatever whitespace surrounds it.
+ * Exported because identity extraction reads the same labels from the same tables.
+ */
+export function normaliseLabel(label: string): string {
+  return foldToText(label).replace(/\s*[:\uff1a]\s*$/, '')
 }
 
 /**
  * Match a label by normalised text rather than a literal substring.
  *
- * Trailing colons and full-width colons are stripped, whitespace collapses, and accents
- * fold — which is what makes `Country/Region of Origin:` and `País de origen` both
- * resolve without a separate entry for every punctuation variant.
+ * This is what makes `Country/Region of Origin:` and `Pais de origen` both resolve
+ * without a separate entry for every punctuation and accent variant.
  */
 export function matchOriginLabel(label: string): Resolved | null {
-  const normalised = foldToText(label.replace(/[:：]\s*$/, ''))
-  return INDEX.get(normalised) ?? null
+  return INDEX.get(normaliseLabel(label)) ?? null
 }

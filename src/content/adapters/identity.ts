@@ -1,4 +1,5 @@
-import { foldToText } from '../../shared/origin/fold'
+import { normaliseLabel } from './labels'
+import { rowCells, text } from './dom'
 
 export interface ProductIdentity {
   asin: string | null
@@ -40,11 +41,8 @@ const LABELS: Record<'gtin' | 'brand' | 'manufacturer' | 'model' | 'address', re
 
 const INDEX = new Map<string, keyof typeof LABELS>()
 for (const [field, aliases] of Object.entries(LABELS)) {
-  for (const alias of aliases) INDEX.set(foldToText(alias), field as keyof typeof LABELS)
+  for (const alias of aliases) INDEX.set(normaliseLabel(alias), field as keyof typeof LABELS)
 }
-
-const text = (node: Node | null | undefined): string =>
-  (node?.textContent ?? '').replace(/\s+/g, ' ').trim()
 
 /**
  * True when the digits carry a valid GTIN check digit.
@@ -97,14 +95,11 @@ export function extractIdentity(root: ParentNode, url: string): ProductIdentity 
   }
 
   for (const row of root.querySelectorAll('tr')) {
-    const labelCell = row.querySelector('th') ?? row.querySelector('td:first-child')
-    const valueCell = row.querySelector('th')
-      ? row.querySelector('td')
-      : row.querySelector('td + td')
-    if (!labelCell || !valueCell || labelCell === valueCell) continue
+    const cells = rowCells(row)
+    if (!cells) continue
 
-    const field = INDEX.get(foldToText(text(labelCell).replace(/[:：]\s*$/, '')))
-    const value = text(valueCell)
+    const field = INDEX.get(normaliseLabel(text(cells.label)))
+    const value = text(cells.value)
     if (!field || !value) continue
 
     if (field === 'address') {
