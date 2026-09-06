@@ -3,21 +3,27 @@
 A Chrome extension that tells you where a product on Amazon is made — and shows you
 the evidence for the answer instead of asking you to trust a flag.
 
-> **Status: early.** The scaffolding is in place; origin detection is not shipped yet.
-> There is no store listing, and the extension currently does nothing but load.
+> **Status: early.** Origin detection works on product pages: the extension reads the
+> page you are on, shows a badge beside the title and a panel with the evidence behind it.
+> The wider search is not built yet, search-result tiles are not badged, and there is no
+> Chrome Web Store listing — install from source.
 
 ## What it does
 
 On a supported Amazon product page, the extension reads the page you are actually
-looking at and reports what it can establish about the product's origin:
+looking at and shows a badge beside the product title. Clicking it opens a panel with
+everything behind the answer:
 
 - **A verdict with a kind.** "Made in", "brand from" and "ships from" are three
   different questions with three different answers. They are reported separately
   rather than collapsed into one flag.
 - **Evidence, always.** Every claim carries its source, its confidence and a link you
   can check yourself. Where sources disagree, you see the disagreement.
+- **No flag unless we mean it.** Weak evidence shows as "origin unknown" rather than a
+  flag with a caveat buried in a tooltip. The evidence is still one click away.
 - **A wider search, only if you ask.** Looking beyond the current page costs time and
   needs extra permissions, so it happens on a button press and never automatically.
+  *(Not built yet.)*
 
 ## Honest limitations
 

@@ -44,6 +44,16 @@ export interface CacheEntry {
 
 export type CacheMap = Record<string, CacheEntry>
 
+export interface CacheStats {
+  entries: number
+  fresh: number
+  stale: number
+  /** Fresh entries that established at least one claim. */
+  answered: number
+  gtinsIndexed: number
+  capacity: number
+}
+
 const STORE_KEY = 'origin-cache'
 const GTIN_KEY = 'gtin-index'
 
@@ -140,6 +150,27 @@ export class OriginCache {
     if (now - entry.usedAt < TOUCH_GRANULARITY_MS) return
     entry.usedAt = now
     await this.storage.set({ [STORE_KEY]: entries })
+  }
+
+  /**
+   * What the cache is holding, for the popup.
+   *
+   * Counts a "hit" as an entry that established something, which is the number a user
+   * actually cares about — how many products this has answered.
+   */
+  async stats(): Promise<CacheStats> {
+    const { entries, gtins } = await this.load()
+    const now = this.now()
+    const all = Object.values(entries)
+    const fresh = all.filter((entry) => isFresh(entry, now))
+    return {
+      entries: all.length,
+      fresh: fresh.length,
+      stale: all.length - fresh.length,
+      answered: fresh.filter((entry) => isHit(entry.verdict)).length,
+      gtinsIndexed: Object.keys(gtins).length,
+      capacity: MAX_ENTRIES,
+    }
   }
 
   /** Drop everything. Used when a parser change invalidates stored output. */

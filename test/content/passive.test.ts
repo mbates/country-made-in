@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest'
 import { OriginCache } from '../../src/shared/cache'
+import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { fieldToEvidence, productAsin, runPassiveTier } from '../../src/content/passive'
 import type { StorageArea } from '../../src/shared/cache'
 
@@ -119,6 +120,7 @@ describe('ambiguous values', () => {
       {
         label: 'Country of Origin',
         rawText: 'China / Vietnam',
+        sourceId: 'amazon-detail-table',
         sectionId: 'prodDetails',
         kind: 'manufactured',
         confidence: 'high',
@@ -139,6 +141,7 @@ describe('regressions from review of PR #13', () => {
       {
         label: 'Country of Origin',
         rawText: 'Designed in Japan, Made in China',
+        sourceId: 'amazon-detail-table',
         sectionId: 'prodDetails',
         kind: 'manufactured',
         confidence: 'high',
@@ -154,6 +157,7 @@ describe('regressions from review of PR #13', () => {
       {
         label: 'Country of Origin',
         rawText: 'China',
+        sourceId: 'amazon-detail-table',
         sectionId: null,
         kind: 'manufactured',
         confidence: 'high',
@@ -181,5 +185,59 @@ describe('regressions from review of PR #13', () => {
     const first = await runPassiveTier(rendered, URL, HOST, c, at)
     expect(first!.verdict.claims).toEqual({})
     expect(await c.get(first!.productKey)).not.toBeNull()
+  })
+})
+
+describe('source toggles', () => {
+  it('drops evidence from a source the user switched off', async () => {
+    const settings = { ...DEFAULT_SETTINGS, sources: { 'amazon-detail-table': false } }
+    const result = await runPassiveTier(parse(FIXTURE), URL, HOST, cache(), at, settings)
+    // The field is still on the page; the user asked us not to read it.
+    expect(result!.verdict.evidence).toEqual([])
+    expect(result!.verdict.claims).toEqual({})
+  })
+
+  it('reads it when the source is on', async () => {
+    const result = await runPassiveTier(parse(FIXTURE), URL, HOST, cache(), at, DEFAULT_SETTINGS)
+    expect(result!.verdict.evidence).toHaveLength(1)
+  })
+
+  it('reads everything when no settings are supplied', async () => {
+    const result = await runPassiveTier(parse(FIXTURE), URL, HOST, cache(), at)
+    expect(result!.verdict.evidence).toHaveLength(1)
+  })
+})
+
+describe('source toggles apply to cached verdicts too', () => {
+  it('drops a source switched off after the verdict was cached', async () => {
+    const c = cache()
+    // Cached while the source was on...
+    const first = await runPassiveTier(parse(FIXTURE), URL, HOST, c, at, DEFAULT_SETTINGS)
+    expect(first!.verdict.evidence).toHaveLength(1)
+
+    // ...and now switched off. Without filtering the cached evidence this would keep
+    // supplying it for thirty days, while the options page says otherwise.
+    const off = { ...DEFAULT_SETTINGS, sources: { 'amazon-detail-table': false } }
+    const second = await runPassiveTier(parse(FIXTURE), URL, HOST, c, at, off)
+    expect(second!.fromCache).toBe(true)
+    expect(second!.verdict.evidence).toEqual([])
+    expect(second!.verdict.claims).toEqual({})
+  })
+
+  it('brings it back when the source is re-enabled', async () => {
+    const c = cache()
+    await runPassiveTier(parse(FIXTURE), URL, HOST, c, at, DEFAULT_SETTINGS)
+    const off = { ...DEFAULT_SETTINGS, sources: { 'amazon-detail-table': false } }
+    await runPassiveTier(parse(FIXTURE), URL, HOST, c, at, off)
+
+    const back = await runPassiveTier(parse(FIXTURE), URL, HOST, c, at, DEFAULT_SETTINGS)
+    expect(back!.verdict.claims.manufactured?.country.code).toBe('CN')
+  })
+
+  it('returns the cached verdict untouched when nothing was filtered', async () => {
+    const c = cache()
+    const first = await runPassiveTier(parse(FIXTURE), URL, HOST, c, at, DEFAULT_SETTINGS)
+    const second = await runPassiveTier(parse(FIXTURE), URL, HOST, c, at, DEFAULT_SETTINGS)
+    expect(second!.verdict.evidence).toEqual(first!.verdict.evidence)
   })
 })

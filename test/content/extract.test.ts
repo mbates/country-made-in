@@ -131,6 +131,7 @@ describe('extraction shapes', () => {
       {
         label: 'Country of Origin',
         rawText: 'Viet Nam',
+        sourceId: 'amazon-detail-table',
         sectionId: null,
         kind: 'manufactured',
         confidence: 'high',

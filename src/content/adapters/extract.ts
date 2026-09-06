@@ -1,13 +1,18 @@
 import { matchOriginLabel } from './labels'
+import type { OriginSourceId } from '../../shared/sources'
 import { rowCells, sectionOf, text } from './dom'
 import type { ClaimKind, Confidence } from '../../shared/origin'
+
+export type { OriginSourceId }
 
 export interface OriginField {
   /** The label exactly as the page wrote it. */
   label: string
   /** The value text, verbatim — handed to `resolveOrigin` untouched. */
   rawText: string
-  /** Nearest identified region of the page, for the evidence trail. */
+  /** Stable identity of the markup shape this came from. */
+  sourceId: OriginSourceId
+  /** Nearest identified region of the page. Context only — Amazon's id, so unstable. */
   sectionId: string | null
   kind: ClaimKind
   confidence: Confidence
@@ -35,7 +40,13 @@ function fromTableRows(root: ParentNode): OriginField[] {
     const rawText = text(cells.value)
     if (!rawText) continue
 
-    found.push({ label: text(cells.label), rawText, sectionId: sectionOf(row), ...match })
+    found.push({
+      label: text(cells.label),
+      rawText,
+      sourceId: 'amazon-detail-table',
+      sectionId: sectionOf(row),
+      ...match,
+    })
   }
   return found
 }
@@ -66,7 +77,15 @@ function fromDetailBullets(root: ParentNode): OriginField[] {
         const value = sibling
           ? text(sibling)
           : whole.slice(at === -1 ? label.length : at + label.length).replace(/^\s*[:：]?\s*/, '')
-        if (value) found.push({ label, rawText: value, sectionId: sectionOf(item), ...match })
+        if (value) {
+          found.push({
+            label,
+            rawText: value,
+            sourceId: 'amazon-detail-bullets',
+            sectionId: sectionOf(item),
+            ...match,
+          })
+        }
         continue
       }
     }
@@ -78,7 +97,15 @@ function fromDetailBullets(root: ParentNode): OriginField[] {
     const match = matchOriginLabel(label)
     if (!match) continue
     const value = whole.slice(split + 1).trim()
-    if (value) found.push({ label, rawText: value, sectionId: sectionOf(item), ...match })
+    if (value) {
+      found.push({
+        label,
+        rawText: value,
+        sourceId: 'amazon-detail-bullets',
+        sectionId: sectionOf(item),
+        ...match,
+      })
+    }
   }
   return found
 }
@@ -92,7 +119,15 @@ function fromDefinitionLists(root: ParentNode): OriginField[] {
     const value = term.nextElementSibling
     if (value?.tagName.toLowerCase() !== 'dd') continue
     const rawText = text(value)
-    if (rawText) found.push({ label: text(term), rawText, sectionId: sectionOf(term), ...match })
+    if (rawText) {
+      found.push({
+        label: text(term),
+        rawText,
+        sourceId: 'amazon-definition-list',
+        sectionId: sectionOf(term),
+        ...match,
+      })
+    }
   }
   return found
 }

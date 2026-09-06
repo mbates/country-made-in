@@ -223,3 +223,31 @@ describe('regressions from review of PR #13', () => {
     expect(storage.writes).toBe(before + 1)
   })
 })
+
+describe('stats', () => {
+  it('counts nothing on an empty cache', async () => {
+    const stats = await cache().stats()
+    expect(stats).toMatchObject({ entries: 0, fresh: 0, stale: 0, answered: 0, gtinsIndexed: 0 })
+    expect(stats.capacity).toBe(MAX_ENTRIES)
+  })
+
+  it('separates entries that answered from entries that did not', async () => {
+    const c = cache()
+    await c.put({ marketplace: 'amazon.com', asin: 'B1', gtin: 'G1' }, hit())
+    await c.put({ marketplace: 'amazon.com', asin: 'B2' }, miss())
+    const stats = await c.stats()
+    expect(stats.entries).toBe(2)
+    expect(stats.answered).toBe(1)
+    expect(stats.gtinsIndexed).toBe(1)
+  })
+
+  it('counts an expired entry as stale rather than fresh', async () => {
+    const c = cache()
+    await c.put(KEY, hit())
+    clock += TTL_HIT_MS + 1
+    const stats = await c.stats()
+    expect(stats.entries).toBe(1)
+    expect(stats.fresh).toBe(0)
+    expect(stats.stale).toBe(1)
+  })
+})

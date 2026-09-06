@@ -35,7 +35,7 @@
         "*://*.amazon.es/*",
         "*://*.amazon.co.jp/*"
       ],
-      "js": ["src/content/index.ts"]
+      "js": ["src/content/index.tsx"]
     }
   ],
   "action": {

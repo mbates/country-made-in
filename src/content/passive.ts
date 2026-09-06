@@ -2,7 +2,9 @@ import { extractOriginFields } from './adapters/extract'
 import { extractIdentity } from './adapters/identity'
 import { aggregate, resolveOrigin } from '../shared/origin'
 import { marketplaceFromHostname } from '../shared/marketplaces'
+import { isSourceEnabled } from '../shared/settings'
 import type { OriginCache } from '../shared/cache'
+import type { Settings } from '../shared/settings'
 import type { Evidence, OriginVerdict, ProductKey } from '../shared/origin'
 import type { OriginField } from './adapters/extract'
 
@@ -38,7 +40,7 @@ export function fieldToEvidence(field: OriginField, url: string, at: string): Ev
   return {
     kind: field.kind,
     country,
-    sourceId: field.sectionId ?? 'amazon-page',
+    sourceId: field.sourceId,
     sourceLabel: field.label,
     url,
     quote: field.rawText,
@@ -81,7 +83,8 @@ export async function runPassiveTier(
   url: string,
   hostname: string,
   cache: OriginCache,
-  now: () => Date = () => new Date()
+  now: () => Date = () => new Date(),
+  settings?: Settings
 ): Promise<PassiveResult | null> {
   const marketplace = marketplaceFromHostname(hostname)
   const asin = productAsin(url)
@@ -94,11 +97,26 @@ export async function runPassiveTier(
     ...(identity.gtin ? { gtin: identity.gtin } : {}),
   }
 
+  // A source the user has switched off contributes nothing — not weaker evidence, none.
+  const enabled = (item: Evidence) => !settings || isSourceEnabled(settings, item.sourceId)
+
   const cached = await cache.get(productKey)
-  if (cached) return { productKey, verdict: cached, fromCache: true }
+  if (cached) {
+    // The filter has to apply to cached evidence too. A verdict stored before the user
+    // switched a source off would otherwise keep supplying it for up to thirty days,
+    // while the options page says the setting removes it from every verdict.
+    const kept = cached.evidence.filter(enabled)
+    const verdict =
+      kept.length === cached.evidence.length
+        ? cached
+        : aggregate({ productKey, evidence: kept, searchedDeep: cached.searchedDeep })
+    return { productKey, verdict, fromCache: true }
+  }
 
   const at = now().toISOString()
-  const evidence = extractOriginFields(doc).map((field) => fieldToEvidence(field, url, at))
+  const evidence = extractOriginFields(doc)
+    .map((field) => fieldToEvidence(field, url, at))
+    .filter(enabled)
   const verdict = aggregate({ productKey, evidence, searchedDeep: false })
 
   // A page with no origin field is cached on the shorter miss TTL — otherwise the most

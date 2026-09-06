@@ -26,8 +26,18 @@ function render(node: React.ReactElement) {
 
 beforeEach(() => {
   document.body.innerHTML = ''
+  const store: Record<string, unknown> = {}
+  const area = {
+    get: async (keys: string[]) =>
+      Object.fromEntries(keys.filter((k) => k in store).map((k) => [k, store[k]])),
+    set: async (items: Record<string, unknown>) => void Object.assign(store, items),
+  }
   vi.stubGlobal('chrome', {
-    runtime: { getManifest: () => ({ name: 'Country Made In', version: '0.1.0' }) },
+    runtime: {
+      getManifest: () => ({ name: 'Country Made In', version: '0.1.0' }),
+      openOptionsPage: () => {},
+    },
+    storage: { sync: area, local: area },
   })
 })
 
