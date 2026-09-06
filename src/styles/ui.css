@@ -1,0 +1,21 @@
+@import 'tailwindcss';
+
+/*
+ * Tailwind's preflight resets the *document*, which inside a shadow root means resetting
+ * nothing useful and, if it leaked, Amazon's page. Everything here is scoped to :host.
+ */
+:host {
+  all: initial;
+  font-family:
+    'Amazon Ember',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  color-scheme: light;
+}
+
+:host([data-theme='dark']) {
+  color-scheme: dark;
+}
