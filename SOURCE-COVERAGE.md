@@ -56,14 +56,27 @@ From plan 05-04, ordered by how close each gets to actual manufacture. **None me
 | GS1 barcode prefix | Country that **registered the barcode** | `brand-origin` at most | Not measured |
 | Customs / bills of lading | Actual shipments and their export country | `shipped-from` | Deferred to plan 06 — commercial, key-gated |
 
-### A note on retailer scraping
+### On fetching from other retailers
 
-Four of the candidates are retail sites rather than public data services. Fetching those
-means an extension making automated requests to a third party from the user's own IP,
-against terms of service that generally prohibit it. That is a different proposition from
-Wikidata's SPARQL endpoint or the FCC's public database, which exist to be queried.
+**Decision (2026-09-06): in scope.** An endpoint that serves a request is fair to
+request from; securing it is the operator's business, not ours. What we must not do is
+work around a control that is there to stop us — no evading bot detection, no
+impersonating a browser we are not, no ignoring a `robots.txt` we have been served.
 
-Worth settling before any of them is built, not after.
+Two things to be accurate about when these are measured:
+
+- **These are mostly not APIs.** Walmart's is partner-gated behind an approved key, and
+  Home Depot and B&H publish none; the closest to a public interface is the
+  unauthenticated JSON endpoint behind Target's own product pages. In practice this
+  candidate means parsing product HTML, which is more fragile than an API and needs
+  re-checking at gate time rather than assumed from this note.
+- **Requests come from the user's IP.** A retailer that objects does not reply with a
+  refusal, it blocks the address — and the person locked out of Home Depot is the user,
+  not us. That is the real cost, and it is a reason to keep request volume low and to
+  cache hard, not a reason to skip the candidate.
+
+The gate settles this on evidence rather than argument: a source that gets blocked has a
+poor hit rate and fails 05-01 on the numbers.
 
 ### On GS1 prefixes
 
