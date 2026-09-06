@@ -17,7 +17,6 @@
     "*://*.amazon.es/*",
     "*://*.amazon.co.jp/*"
   ],
-  "optional_host_permissions": ["https://*/*"],
   "background": {
     "service_worker": "src/background/service-worker.ts",
     "type": "module"
