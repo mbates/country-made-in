@@ -1,16 +1,9 @@
 import { matchOriginLabel } from './labels'
+import type { OriginSourceId } from '../../shared/sources'
 import { rowCells, sectionOf, text } from './dom'
 import type { ClaimKind, Confidence } from '../../shared/origin'
 
-/**
- * Which shape of markup a field was read from.
- *
- * Stable and enumerable, unlike the id of whatever Amazon element happens to enclose it
- * — those change without notice and cannot be listed in advance, so a per-source setting
- * keyed on them would silently match nothing.
- */
-export type OriginSourceId =
-  'amazon-detail-table' | 'amazon-detail-bullets' | 'amazon-definition-list'
+export type { OriginSourceId }
 
 export interface OriginField {
   /** The label exactly as the page wrote it. */

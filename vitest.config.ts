@@ -12,5 +12,6 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: 'node',
+    setupFiles: ['./test/setup.ts'],
   },
 })

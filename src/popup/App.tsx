@@ -46,7 +46,8 @@ export function App() {
 
       {!settings.enabled && (
         <p className="text-xs text-slate-500">
-          No badges are shown and no pages are read while this is off.
+          No page will be read from the next load onwards. Amazon tabs already open keep their badge
+          until you reload them.
         </p>
       )}
 

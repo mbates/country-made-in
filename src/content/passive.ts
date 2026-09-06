@@ -97,14 +97,26 @@ export async function runPassiveTier(
     ...(identity.gtin ? { gtin: identity.gtin } : {}),
   }
 
+  // A source the user has switched off contributes nothing — not weaker evidence, none.
+  const enabled = (item: Evidence) => !settings || isSourceEnabled(settings, item.sourceId)
+
   const cached = await cache.get(productKey)
-  if (cached) return { productKey, verdict: cached, fromCache: true }
+  if (cached) {
+    // The filter has to apply to cached evidence too. A verdict stored before the user
+    // switched a source off would otherwise keep supplying it for up to thirty days,
+    // while the options page says the setting removes it from every verdict.
+    const kept = cached.evidence.filter(enabled)
+    const verdict =
+      kept.length === cached.evidence.length
+        ? cached
+        : aggregate({ productKey, evidence: kept, searchedDeep: cached.searchedDeep })
+    return { productKey, verdict, fromCache: true }
+  }
 
   const at = now().toISOString()
   const evidence = extractOriginFields(doc)
     .map((field) => fieldToEvidence(field, url, at))
-    // A source the user has switched off contributes nothing — not weaker evidence, none.
-    .filter((item) => !settings || isSourceEnabled(settings, item.sourceId))
+    .filter(enabled)
   const verdict = aggregate({ productKey, evidence, searchedDeep: false })
 
   // A page with no origin field is cached on the shorter miss TTL — otherwise the most

@@ -27,7 +27,7 @@ const verdict = (
 const someEvidence = (confidence: Confidence = 'high'): Evidence => ({
   kind: 'manufactured',
   country: null,
-  sourceId: 'prodDetails',
+  sourceId: 'amazon-detail-table',
   sourceLabel: 'Country of Origin',
   url: null,
   quote: 'China / Vietnam',

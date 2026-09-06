@@ -91,7 +91,7 @@ describe('isSourceEnabled', () => {
   })
 
   it('respects an explicit opt-out', async () => {
-    const settings = await saveSettings({ sources: { prodDetails: false } }, storage)
-    expect(isSourceEnabled(settings, 'prodDetails')).toBe(false)
+    const settings = await saveSettings({ sources: { 'amazon-detail-table': false } }, storage)
+    expect(isSourceEnabled(settings, 'amazon-detail-table')).toBe(false)
   })
 })

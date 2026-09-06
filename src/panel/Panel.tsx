@@ -9,6 +9,24 @@ const KIND_LABEL: Record<ClaimKind, string> = {
 
 const KIND_ORDER: ClaimKind[] = ['manufactured', 'brand-origin', 'shipped-from']
 
+/**
+ * A link is rendered only for a scheme that navigates.
+ *
+ * `Evidence.url` is an unconstrained string that round-trips through storage, and plan 05
+ * fills it from sources other than the page's own location. A `javascript:` value here
+ * would execute in **Amazon's** context on click — the one thing the shadow boundary does
+ * not protect against.
+ */
+function safeHref(url: string | null): string | null {
+  if (!url) return null
+  try {
+    const parsed = new URL(url, location.href)
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.href : null
+  } catch {
+    return null
+  }
+}
+
 const formatDate = (iso: string): string => {
   const date = new Date(iso)
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString()
@@ -36,6 +54,7 @@ function ClaimRow({ kind, claim }: { kind: ClaimKind; claim: Claim }) {
 }
 
 function EvidenceRow({ item }: { item: Evidence }) {
+  const href = safeHref(item.url)
   return (
     <li className="border-t border-slate-200 py-2 text-xs">
       <div className="flex items-baseline justify-between gap-2">
@@ -53,9 +72,9 @@ function EvidenceRow({ item }: { item: Evidence }) {
           {item.country ? `${item.country.flag} ${item.country.name}` : 'no country read'} ·{' '}
           {KIND_LABEL[item.kind]} · {item.confidence}
         </span>
-        {item.url && (
+        {href && (
           <a
-            href={item.url}
+            href={href}
             target="_blank"
             rel="noreferrer"
             className="shrink-0 text-sky-700 underline"

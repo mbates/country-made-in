@@ -11,8 +11,11 @@ let sheet: CSSStyleSheet | null = null
 function styleSheet(): CSSStyleSheet | null {
   if (sheet) return sheet
   try {
-    sheet = new CSSStyleSheet()
-    sheet.replaceSync(uiStyles)
+    // Assigned only after replaceSync succeeds. Caching the empty sheet first would have
+    // this host fall back correctly and every later one silently adopt nothing.
+    const created = new CSSStyleSheet()
+    created.replaceSync(uiStyles)
+    sheet = created
     return sheet
   } catch {
     // Older engines without constructable stylesheets fall back to a <style> node.

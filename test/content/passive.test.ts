@@ -207,3 +207,37 @@ describe('source toggles', () => {
     expect(result!.verdict.evidence).toHaveLength(1)
   })
 })
+
+describe('source toggles apply to cached verdicts too', () => {
+  it('drops a source switched off after the verdict was cached', async () => {
+    const c = cache()
+    // Cached while the source was on...
+    const first = await runPassiveTier(parse(FIXTURE), URL, HOST, c, at, DEFAULT_SETTINGS)
+    expect(first!.verdict.evidence).toHaveLength(1)
+
+    // ...and now switched off. Without filtering the cached evidence this would keep
+    // supplying it for thirty days, while the options page says otherwise.
+    const off = { ...DEFAULT_SETTINGS, sources: { 'amazon-detail-table': false } }
+    const second = await runPassiveTier(parse(FIXTURE), URL, HOST, c, at, off)
+    expect(second!.fromCache).toBe(true)
+    expect(second!.verdict.evidence).toEqual([])
+    expect(second!.verdict.claims).toEqual({})
+  })
+
+  it('brings it back when the source is re-enabled', async () => {
+    const c = cache()
+    await runPassiveTier(parse(FIXTURE), URL, HOST, c, at, DEFAULT_SETTINGS)
+    const off = { ...DEFAULT_SETTINGS, sources: { 'amazon-detail-table': false } }
+    await runPassiveTier(parse(FIXTURE), URL, HOST, c, at, off)
+
+    const back = await runPassiveTier(parse(FIXTURE), URL, HOST, c, at, DEFAULT_SETTINGS)
+    expect(back!.verdict.claims.manufactured?.country.code).toBe('CN')
+  })
+
+  it('returns the cached verdict untouched when nothing was filtered', async () => {
+    const c = cache()
+    const first = await runPassiveTier(parse(FIXTURE), URL, HOST, c, at, DEFAULT_SETTINGS)
+    const second = await runPassiveTier(parse(FIXTURE), URL, HOST, c, at, DEFAULT_SETTINGS)
+    expect(second!.verdict.evidence).toEqual(first!.verdict.evidence)
+  })
+})

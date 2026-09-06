@@ -2,10 +2,11 @@
 import { StrictMode, act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { App as OptionsApp } from '../../src/options/App'
+import { App as OptionsApp, SOURCES } from '../../src/options/App'
 import { App as PopupApp } from '../../src/popup/App'
 import { ALL_MARKETPLACES, loadSettings } from '../../src/shared/settings'
 import { LINKS, PUBLISHER } from '../../src/shared/links'
+import { ORIGIN_SOURCES } from '../../src/shared/sources'
 
 let store: Record<string, unknown>
 let openedOptions: number
@@ -59,7 +60,7 @@ describe('popup', () => {
     const el = await render(<PopupApp />)
     await click(byText(el, 'On'))
     expect((await loadSettings(chrome.storage.sync as never)).enabled).toBe(false)
-    expect(el.textContent).toContain('no pages are read while this is off')
+    expect(el.textContent).toContain('already open keep')
   })
 
   it('reports what is cached', async () => {
@@ -151,5 +152,43 @@ describe('options', () => {
     const el = await render(<OptionsApp />)
     expect(el.textContent).toContain(PUBLISHER)
     expect(el.textContent).toContain('v0.1.0')
+  })
+})
+
+describe('regressions from review of PR #14', () => {
+  it('offers a toggle for every source that exists', () => {
+    // The bug this replaced was a source id no setting could match. A source added to
+    // ORIGIN_SOURCES without a toggle here is the same failure from the other direction,
+    // and this is the assertion that would catch it.
+    expect(SOURCES.map((s) => s.id).sort()).toEqual([...ORIGIN_SOURCES].sort())
+  })
+
+  it('keeps two quick toggles from dropping one another', async () => {
+    // Patches used to be built from a stale React snapshot, so the second write replaced
+    // the whole nested object with one taken before the first landed.
+    const el = await render(<OptionsApp />)
+    const labels = [...el.querySelectorAll('label')]
+    const de = labels.find((l) => l.textContent?.trim() === 'amazon.de')!
+    const fr = labels.find((l) => l.textContent?.trim() === 'amazon.fr')!
+
+    await click(de.querySelector('input'))
+    await click(fr.querySelector('input'))
+
+    const settings = await loadSettings(chrome.storage.sync as never)
+    expect(settings.marketplaces['amazon.de']).toBe(false)
+    expect(settings.marketplaces['amazon.fr']).toBe(false)
+  })
+
+  it('says so when a save fails, rather than looking saved', async () => {
+    const el = await render(<OptionsApp />)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    ;(chrome.storage.sync as unknown as { set: () => Promise<void> }).set = () =>
+      Promise.reject(new Error('quota'))
+
+    const label = [...el.querySelectorAll('label')].find(
+      (l) => l.textContent?.trim() === 'amazon.de'
+    )!
+    await click(label.querySelector('input'))
+    expect(el.textContent).toContain('Could not save')
   })
 })

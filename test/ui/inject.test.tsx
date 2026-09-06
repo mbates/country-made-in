@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  BADGE_ID,
+  BADGE_ATTR,
   PANEL_ID,
   closePanel,
   findTitleAnchor,
@@ -10,6 +10,9 @@ import {
   openPanel,
 } from '../../src/content/inject'
 import { badgeState } from '../../src/content/badge-state'
+import { mountBadge as mount } from '../../src/content/inject'
+import { createRoot } from 'react-dom/client'
+import { Panel } from '../../src/panel/Panel'
 import { countryByCode } from '../../src/shared/origin'
 import type { Claim, OriginVerdict } from '../../src/shared/origin'
 
@@ -31,7 +34,7 @@ const verdict = (over: Partial<OriginVerdict> = {}): OriginVerdict => ({
     {
       kind: 'manufactured',
       country: CN,
-      sourceId: 'prodDetails',
+      sourceId: 'amazon-detail-table',
       sourceLabel: 'Country of Origin',
       url: 'https://www.amazon.com/dp/B000000000',
       quote: 'China',
@@ -43,8 +46,12 @@ const verdict = (over: Partial<OriginVerdict> = {}): OriginVerdict => ({
   ...over,
 })
 
+const badgeHost = (): HTMLElement | null => document.querySelector(`[${BADGE_ATTR}]`)
+
 const shadowText = (id: string): string =>
   document.getElementById(id)?.shadowRoot?.textContent ?? ''
+
+const badgeText = (): string => badgeHost()?.shadowRoot?.textContent ?? ''
 
 beforeEach(() => {
   document.body.innerHTML = '<span id="productTitle">A product</span>'
@@ -62,25 +69,25 @@ describe('the badge is isolated from Amazon', () => {
     const anchor = document.getElementById('productTitle')!
     act(() => void mountBadge(anchor, badgeState(verdict()), verdict()))
 
-    const host = document.getElementById(BADGE_ID)!
+    const host = badgeHost()!
     expect(host.shadowRoot).not.toBeNull()
     // Nothing of ours in the light DOM: Amazon's CSS cannot reach it and ours cannot
     // reach Amazon's.
     expect(document.body.innerHTML).not.toContain('China')
-    expect(shadowText(BADGE_ID)).toContain('China')
+    expect(badgeText()).toContain('China')
   })
 
   it('sits after the title rather than replacing anything', () => {
     const anchor = document.getElementById('productTitle')!
     act(() => void mountBadge(anchor, badgeState(verdict()), verdict()))
-    expect(anchor.nextElementSibling?.id).toBe(BADGE_ID)
+    expect(anchor.nextElementSibling?.hasAttribute(BADGE_ATTR)).toBe(true)
     expect(anchor.textContent).toBe('A product')
   })
 
   it('stamps the theme on the host so the shadow tree inherits it', () => {
     const anchor = document.getElementById('productTitle')!
     act(() => void mountBadge(anchor, badgeState(verdict()), verdict()))
-    expect(document.getElementById(BADGE_ID)?.getAttribute('data-theme')).toMatch(/^(light|dark)$/)
+    expect(badgeHost()?.getAttribute('data-theme')).toMatch(/^(light|dark)$/)
   })
 })
 
@@ -106,7 +113,7 @@ describe('injection tolerates Amazon changing', () => {
       mountBadge(hostileAnchor(), badgeState(verdict()), verdict())
       act(() => void mountBadge(anchor, badgeState(verdict()), verdict()))
     }).not.toThrow()
-    expect(document.getElementById(BADGE_ID)).not.toBeNull()
+    expect(badgeHost()).not.toBeNull()
   })
 
   it('finds the title through any of the known anchors', () => {
@@ -126,13 +133,13 @@ describe('the badge shows what it should', () => {
       () =>
         void mountBadge(document.getElementById('productTitle')!, badgeState(verdict()), verdict())
     )
-    expect(shadowText(BADGE_ID)).toContain(`${CN.flag} China`)
+    expect(badgeText()).toContain(`${CN.flag} China`)
   })
 
   it('shows no flag on a low-confidence claim', () => {
     const weak = verdict({ claims: { manufactured: claim({ confidence: 'low' }) } })
     act(() => void mountBadge(document.getElementById('productTitle')!, badgeState(weak), weak))
-    const text = shadowText(BADGE_ID)
+    const text = badgeText()
     expect(text).toContain('Origin unknown')
     expect(text).not.toContain(CN.flag)
   })
@@ -144,7 +151,7 @@ describe('the badge shows what it should', () => {
       },
     })
     act(() => void mountBadge(document.getElementById('productTitle')!, badgeState(split), split))
-    expect(shadowText(BADGE_ID)).toContain('disputed')
+    expect(badgeText()).toContain('disputed')
   })
 })
 
@@ -210,5 +217,138 @@ describe('the panel', () => {
     act(() => openPanel(anchor, verdict()))
     act(() => openPanel(anchor, verdict()))
     expect(document.querySelectorAll(`#${PANEL_ID}`)).toHaveLength(1)
+  })
+})
+
+describe('regressions from review of PR #14', () => {
+  it('gives every badge a unique id and marks it by attribute', () => {
+    // Plan 05 mounts one badge per tile, so duplicates are the normal case; duplicate
+    // ids would be invalid markup that getElementById quietly hides.
+    document.body.innerHTML = '<span id="a">A</span><span id="b">B</span>'
+    act(() => void mountBadge(document.getElementById('a')!, badgeState(verdict()), verdict()))
+    act(() => void mountBadge(document.getElementById('b')!, badgeState(verdict()), verdict()))
+
+    const hosts = [...document.querySelectorAll(`[${BADGE_ATTR}]`)]
+    expect(hosts).toHaveLength(2)
+    expect(new Set(hosts.map((h) => h.id)).size).toBe(2)
+  })
+
+  it('does not stack a second badge on the same anchor', () => {
+    const anchor = document.getElementById('productTitle')!
+    act(() => void mountBadge(anchor, badgeState(verdict()), verdict()))
+    const again = mount(anchor, badgeState(verdict()), verdict())
+    expect(again).toBeNull()
+    expect(document.querySelectorAll(`[${BADGE_ATTR}]`)).toHaveLength(1)
+  })
+
+  it('removes the badge when its tree throws, instead of leaving an empty host', async () => {
+    // A try/catch around render() cannot catch this: React surfaces it out of band.
+    const broken = verdict({
+      claims: {
+        manufactured: {
+          ...claim(),
+          // Country is read during render; a null name blows up badgeLabel.
+          country: null as unknown as ReturnType<typeof countryByCode> & object,
+        } as never,
+      },
+    })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    act(() => void mountBadge(document.getElementById('productTitle')!, badgeState(broken), broken))
+    // Teardown is deferred a microtask — React forbids unmounting inside a lifecycle.
+    await act(async () => {})
+    expect(document.querySelectorAll(`[${BADGE_ATTR}]`)).toHaveLength(0)
+  })
+
+  it('dismisses the panel on Escape', () => {
+    act(() => openPanel(document.getElementById('productTitle')!, verdict()))
+    expect(document.getElementById(PANEL_ID)).not.toBeNull()
+    act(() => {
+      dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    })
+    expect(document.getElementById(PANEL_ID)).toBeNull()
+  })
+
+  it('dismisses the panel on a click outside it', async () => {
+    vi.useFakeTimers()
+    act(() => openPanel(document.getElementById('productTitle')!, verdict()))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    act(() => {
+      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true, composed: true }))
+    })
+    expect(document.getElementById(PANEL_ID)).toBeNull()
+    vi.useRealTimers()
+  })
+
+  it('detaches its listeners when closed, so a later scroll does nothing', () => {
+    act(() => openPanel(document.getElementById('productTitle')!, verdict()))
+    act(() => closePanel())
+    expect(() => dispatchEvent(new Event('resize'))).not.toThrow()
+    expect(document.getElementById(PANEL_ID)).toBeNull()
+  })
+
+  it('opens the panel from the badge, which is the whole interaction', () => {
+    act(
+      () =>
+        void mountBadge(document.getElementById('productTitle')!, badgeState(verdict()), verdict())
+    )
+    const button = badgeHost()!.shadowRoot!.querySelector('button')!
+    act(() => button.click())
+    expect(document.getElementById(PANEL_ID)).not.toBeNull()
+    expect(shadowText(PANEL_ID)).toContain('Where is this made?')
+  })
+
+  it('closes the panel from its own close button', () => {
+    act(() => openPanel(document.getElementById('productTitle')!, verdict()))
+    const close = document
+      .getElementById(PANEL_ID)!
+      .shadowRoot!.querySelector('button[aria-label="Close"]') as HTMLButtonElement
+    act(() => close.click())
+    expect(document.getElementById(PANEL_ID)).toBeNull()
+  })
+
+  it('renders the wider-search button with its permission warning before the prompt', () => {
+    // The copy has to appear before Chrome's prompt, so it must render with the button.
+    const container = document.createElement('div')
+    document.body.append(container)
+    act(() => {
+      createRoot(container).render(
+        <Panel verdict={verdict()} onClose={() => {}} onSearchWider={() => {}} />
+      )
+    })
+    expect(container.textContent).toContain('Search wider')
+    expect(container.textContent).toContain('Chrome will ask permission')
+  })
+
+  it('refuses a javascript: url rather than linking to it', () => {
+    const hostile = verdict({
+      evidence: [{ ...verdict().evidence[0], url: 'javascript:alert(document.cookie)' }],
+    })
+    act(() => openPanel(document.getElementById('productTitle')!, hostile))
+    const links = [...document.getElementById(PANEL_ID)!.shadowRoot!.querySelectorAll('a')]
+    expect(links).toHaveLength(0)
+  })
+
+  it('still links an ordinary https url', () => {
+    act(() => openPanel(document.getElementById('productTitle')!, verdict()))
+    const link = document.getElementById(PANEL_ID)!.shadowRoot!.querySelector('a')
+    expect(link?.getAttribute('href')).toBe('https://www.amazon.com/dp/B000000000')
+  })
+
+  it('stamps dark when the browser asks for it', () => {
+    // jsdom has no matchMedia, so without a stub this path never runs and the theme test
+    // passes for the wrong reason.
+    vi.stubGlobal('matchMedia', () => ({
+      matches: true,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }))
+    act(
+      () =>
+        void mountBadge(document.getElementById('productTitle')!, badgeState(verdict()), verdict())
+    )
+    expect(badgeHost()?.getAttribute('data-theme')).toBe('dark')
+    vi.unstubAllGlobals()
   })
 })

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Attribution } from '../shared/Attribution'
 import { ALL_MARKETPLACES, DEFAULT_SETTINGS, loadSettings, saveSettings } from '../shared/settings'
+import type { OriginSourceId } from '../shared/sources'
 import type { BadgeDensity, Settings } from '../shared/settings'
 import type { Marketplace } from '../shared/marketplaces'
 
@@ -11,7 +12,7 @@ import type { Marketplace } from '../shared/marketplaces'
  * are listed here as they land. A toggle for something that cannot run yet would be a
  * lie, so the list is what actually exists.
  */
-const SOURCES: { id: string; label: string; detail: string }[] = [
+export const SOURCES: { id: OriginSourceId; label: string; detail: string }[] = [
   {
     id: 'amazon-detail-table',
     label: 'Product details table',
@@ -78,23 +79,43 @@ function Check({
 export function App() {
   const { name, version } = chrome.runtime.getManifest()
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
-  const [saved, setSaved] = useState(false)
+  const [status, setStatus] = useState<'idle' | 'saved' | 'failed'>('idle')
 
   useEffect(() => {
     void loadSettings().then(setSettings)
   }, [])
 
-  const update = async (patch: Partial<Settings>) => {
-    setSettings(await saveSettings(patch))
-    setSaved(true)
-    setTimeout(() => setSaved(false), 1500)
+  /**
+   * Patches are built from what is *stored*, not from React state.
+   *
+   * A nested patch assembled from a stale `settings` snapshot replaces the whole nested
+   * object, so two toggles inside one storage round trip would drop the first. A failure
+   * is surfaced rather than swallowed: an unhandled rejection leaves the checkbox where
+   * the user clicked it and nothing says the setting did not persist.
+   */
+  const update = async (build: (current: Settings) => Partial<Settings>) => {
+    try {
+      const current = await loadSettings()
+      setSettings(await saveSettings(build(current)))
+      setStatus('saved')
+      setTimeout(() => setStatus((s) => (s === 'saved' ? 'idle' : s)), 1500)
+    } catch (error) {
+      console.warn('[country-made-in] could not save settings', error)
+      setStatus('failed')
+      setSettings(await loadSettings().catch(() => settings))
+    }
   }
 
   return (
     <main className="mx-auto max-w-2xl space-y-6 p-8 font-sans text-slate-800">
       <div className="flex items-baseline justify-between gap-2">
         <h1 className="text-xl font-semibold">{name} — settings</h1>
-        <span className="text-xs text-emerald-700">{saved ? 'Saved' : ''}</span>
+        <span
+          className={`text-xs ${status === 'failed' ? 'text-red-700' : 'text-emerald-700'}`}
+          role="status"
+        >
+          {status === 'saved' ? 'Saved' : status === 'failed' ? 'Could not save' : ''}
+        </span>
       </div>
 
       <Section title="Marketplaces">
@@ -109,9 +130,9 @@ export function App() {
               label={marketplace}
               checked={settings.marketplaces[marketplace] !== false}
               onChange={(next) =>
-                void update({
-                  marketplaces: { ...settings.marketplaces, [marketplace]: next },
-                })
+                void update((current) => ({
+                  marketplaces: { ...current.marketplaces, [marketplace]: next },
+                }))
               }
             />
           ))}
@@ -129,7 +150,7 @@ export function App() {
               type="radio"
               name="listingBadges"
               checked={settings.listingBadges === option.value}
-              onChange={() => void update({ listingBadges: option.value })}
+              onChange={() => void update(() => ({ listingBadges: option.value }))}
               className="mt-0.5"
             />
             <span>
@@ -145,7 +166,7 @@ export function App() {
           label="Ask before every wider search"
           detail="A wider search reads other sites and needs your permission. Leave this on to be asked each time."
           checked={settings.confirmDeepSearch}
-          onChange={(next) => void update({ confirmDeepSearch: next })}
+          onChange={(next) => void update(() => ({ confirmDeepSearch: next }))}
         />
       </Section>
 
@@ -161,7 +182,9 @@ export function App() {
             detail={source.detail}
             checked={settings.sources[source.id] !== false}
             onChange={(next) =>
-              void update({ sources: { ...settings.sources, [source.id]: next } })
+              void update((current) => ({
+                sources: { ...current.sources, [source.id]: next },
+              }))
             }
           />
         ))}
