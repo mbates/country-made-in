@@ -10,6 +10,7 @@ import {
   openPanel,
 } from '../../src/content/inject'
 import { badgeState } from '../../src/content/badge-state'
+import { updatePanel } from '../../src/content/inject'
 import { mountBadge as mount } from '../../src/content/inject'
 import { createRoot } from 'react-dom/client'
 import { Panel } from '../../src/panel/Panel'
@@ -350,5 +351,96 @@ describe('regressions from review of PR #14', () => {
     )
     expect(badgeHost()?.getAttribute('data-theme')).toBe('dark')
     vi.unstubAllGlobals()
+  })
+})
+
+describe('the wider search in the panel', () => {
+  const open = (options?: Parameters<typeof openPanel>[2]) =>
+    act(() => openPanel(document.getElementById('productTitle')!, verdict(), options))
+
+  it('shows no wider-search button when nothing wired it up', () => {
+    open()
+    expect(shadowText(PANEL_ID)).not.toContain('Search wider')
+  })
+
+  it('names the hosts it would read, before Chrome is asked', () => {
+    // The prompt is the consequence of this button; the user should know first.
+    open({ onSearchWider: () => {}, searchHosts: ['fcc.report', 'wikidata.org'] })
+    const text = shadowText(PANEL_ID)
+    expect(text).toContain('fcc.report, wikidata.org')
+    expect(text).toContain('Chrome will ask permission first')
+  })
+
+  it('falls back to generic copy when no host list is known', () => {
+    open({ onSearchWider: () => {} })
+    expect(shadowText(PANEL_ID)).toContain('Chrome will ask permission to read other sites')
+  })
+
+  it('runs the handler on click', () => {
+    let started = 0
+    open({ onSearchWider: () => (started += 1) })
+    const button = [
+      ...document.getElementById(PANEL_ID)!.shadowRoot!.querySelectorAll('button'),
+    ].find((b) => b.textContent?.includes('Search wider'))!
+    act(() => button.click())
+    expect(started).toBe(1)
+  })
+
+  it('shows progress as sources answer, rather than a spinner', () => {
+    open({ onSearchWider: () => {} })
+    act(() => updatePanel({ phase: 'searching', total: 4, done: 2 }))
+    expect(shadowText(PANEL_ID)).toContain('Searching… 2/4')
+  })
+
+  it('disables the button while a search is running', () => {
+    open({ onSearchWider: () => {} })
+    act(() => updatePanel({ phase: 'searching', total: 2, done: 0 }))
+    const button = [
+      ...document.getElementById(PANEL_ID)!.shadowRoot!.querySelectorAll('button'),
+    ].find((b) => b.textContent?.includes('Searching'))!
+    expect((button as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('treats a refusal as a normal outcome and keeps the passive answer', () => {
+    open({ onSearchWider: () => {} })
+    act(() => updatePanel({ phase: 'denied' }))
+    const text = shadowText(PANEL_ID)
+    expect(text).toContain('Permission declined')
+    expect(text).toContain('try again')
+    // The verdict the page gave us is still on screen.
+    expect(text).toContain('China')
+  })
+
+  it('reports "nothing found" as an answer, not a failure', () => {
+    open({ onSearchWider: () => {} })
+    act(() => updatePanel({ phase: 'finished', checked: 6, answered: 0 }))
+    const text = shadowText(PANEL_ID)
+    expect(text).toContain('Checked 6 sources; none stated an origin')
+    expect(text).not.toMatch(/failed|error/i)
+  })
+
+  it('gets the singular right for one source', () => {
+    open({ onSearchWider: () => {} })
+    act(() => updatePanel({ phase: 'finished', checked: 1, answered: 0 }))
+    expect(shadowText(PANEL_ID)).toContain('Checked 1 source;')
+  })
+
+  it('says nothing about coverage when the search did find something', () => {
+    open({ onSearchWider: () => {} })
+    act(() => updatePanel({ phase: 'finished', checked: 6, answered: 2 }))
+    expect(shadowText(PANEL_ID)).not.toContain('none stated an origin')
+  })
+
+  it('surfaces a search error without losing the panel', () => {
+    open({ onSearchWider: () => {} })
+    act(() => updatePanel({ phase: 'error', reason: 'network unreachable' }))
+    expect(shadowText(PANEL_ID)).toContain('network unreachable')
+    expect(document.getElementById(PANEL_ID)).not.toBeNull()
+  })
+
+  it('ignores an update after the panel closed', () => {
+    open({ onSearchWider: () => {} })
+    act(() => closePanel())
+    expect(() => updatePanel({ phase: 'finished', checked: 1, answered: 0 })).not.toThrow()
   })
 })

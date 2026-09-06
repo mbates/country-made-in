@@ -87,14 +87,23 @@ function EvidenceRow({ item }: { item: Evidence }) {
   )
 }
 
+export type DeepSearchStatus =
+  | { phase: 'idle' }
+  | { phase: 'searching'; total: number; done: number }
+  | { phase: 'denied' }
+  | { phase: 'finished'; checked: number; answered: number }
+  | { phase: 'error'; reason: string }
+
 export interface PanelProps {
   verdict: OriginVerdict | null
   onClose: () => void
-  /** Plan 05. Absent until the deep tier exists. */
   onSearchWider?: () => void
+  deep?: DeepSearchStatus
+  /** Hosts the search would read, shown before Chrome's prompt appears. */
+  searchHosts?: readonly string[]
 }
 
-export function Panel({ verdict, onClose, onSearchWider }: PanelProps) {
+export function Panel({ verdict, onClose, onSearchWider, deep, searchHosts }: PanelProps) {
   const state = badgeState(verdict)
   const claims = verdict ? KIND_ORDER.filter((k) => verdict.claims[k]) : []
 
@@ -138,16 +147,43 @@ export function Panel({ verdict, onClose, onSearchWider }: PanelProps) {
           <button
             type="button"
             onClick={onSearchWider}
-            className="w-full cursor-pointer rounded border border-sky-300 bg-sky-50 px-2 py-1.5 text-xs font-medium text-sky-900"
+            disabled={deep?.phase === 'searching'}
+            className="w-full cursor-pointer rounded border border-sky-300 bg-sky-50 px-2 py-1.5 text-xs font-medium text-sky-900 disabled:cursor-default disabled:opacity-60"
           >
-            Search wider
+            {deep?.phase === 'searching' ? `Searching… ${deep.done}/${deep.total}` : 'Search wider'}
           </button>
+
           {/* Stated before Chrome's prompt appears, not after — the prompt is the
               consequence of this button, and the user should know that first. */}
-          <p className="mt-1 text-xs text-slate-500">
-            Looks beyond this page. Chrome will ask permission to read other sites, and the search
-            runs only after you allow it.
-          </p>
+          {deep?.phase !== 'searching' && (
+            <p className="mt-1 text-xs text-slate-500">
+              {searchHosts && searchHosts.length > 0
+                ? `Looks beyond this page, reading ${searchHosts.join(', ')}. Chrome will ask permission first, and the search runs only after you allow it.`
+                : 'Looks beyond this page. Chrome will ask permission to read other sites, and the search runs only after you allow it.'}
+            </p>
+          )}
+
+          {deep?.phase === 'denied' && (
+            <p className="mt-1 text-xs text-slate-600">
+              Permission declined, so nothing was read. What the page itself says is still shown
+              above, and you can try again whenever you like.
+            </p>
+          )}
+
+          {deep?.phase === 'finished' && deep.answered === 0 && (
+            // Not a failure. "We checked and nobody says" is a real answer, and dressing
+            // it up as an error would push the user toward trusting a worse one.
+            <p className="mt-1 text-xs text-slate-600">
+              Checked {deep.checked} {deep.checked === 1 ? 'source' : 'sources'}; none stated an
+              origin for this product.
+            </p>
+          )}
+
+          {deep?.phase === 'error' && (
+            <p className="mt-1 text-xs text-amber-700">
+              The wider search could not finish: {deep.reason}
+            </p>
+          )}
         </div>
       )}
 

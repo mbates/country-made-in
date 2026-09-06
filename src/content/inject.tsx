@@ -6,6 +6,7 @@ import { ErrorBoundary } from '../panel/ErrorBoundary'
 import { Panel } from '../panel/Panel'
 import { createUiHost } from './ui-host'
 import type { BadgeState } from './badge-state'
+import type { DeepSearchStatus } from '../panel/Panel'
 import type { OriginVerdict } from '../shared/origin'
 import type { UiHost } from './ui-host'
 
@@ -39,7 +40,21 @@ function attempt<T>(what: string, run: () => T): T | null {
   }
 }
 
-let panel: (UiHost & { react: Root; detach: () => void }) | null = null
+interface OpenPanel extends UiHost {
+  react: Root
+  detach: () => void
+  draw: (deep: DeepSearchStatus, verdict: OriginVerdict | null) => void
+  verdict: OriginVerdict | null
+}
+
+let panel: OpenPanel | null = null
+
+/** Update the open panel's search state. No-op if it has been closed. */
+export function updatePanel(deep: DeepSearchStatus, verdict?: OriginVerdict | null): void {
+  if (!panel) return
+  if (verdict !== undefined) panel.verdict = verdict
+  attempt('panel update', () => panel?.draw(deep, panel.verdict))
+}
 
 /** Close and unmount the detail panel, if it is open. */
 export function closePanel(): void {
@@ -53,8 +68,17 @@ export function closePanel(): void {
   })
 }
 
+export interface PanelOptions {
+  onSearchWider?: () => void
+  searchHosts?: readonly string[]
+}
+
 /** Open the detail panel next to `anchor`. Replaces any panel already open. */
-export function openPanel(anchor: Element, verdict: OriginVerdict | null): void {
+export function openPanel(
+  anchor: Element,
+  verdict: OriginVerdict | null,
+  options: PanelOptions = {}
+): void {
   closePanel()
   attempt('panel mount', () => {
     const ui = createUiHost('div', PANEL_ID)
@@ -98,14 +122,27 @@ export function openPanel(anchor: Element, verdict: OriginVerdict | null): void 
     }
 
     const react = createRoot(ui.root)
-    react.render(
-      <StrictMode>
-        <ErrorBoundary onFail={() => queueMicrotask(closePanel)}>
-          <Panel verdict={verdict} onClose={closePanel} />
-        </ErrorBoundary>
-      </StrictMode>
-    )
-    panel = { ...ui, react, detach }
+
+    // The panel re-renders in place as the search reports progress, rather than being
+    // torn down and rebuilt — a remount would lose scroll position and drop the
+    // pointerdown listener that dismisses it.
+    const draw = (deep: DeepSearchStatus, current: OriginVerdict | null) =>
+      react.render(
+        <StrictMode>
+          <ErrorBoundary onFail={() => queueMicrotask(closePanel)}>
+            <Panel
+              verdict={current}
+              onClose={closePanel}
+              onSearchWider={options.onSearchWider}
+              searchHosts={options.searchHosts}
+              deep={deep}
+            />
+          </ErrorBoundary>
+        </StrictMode>
+      )
+
+    draw({ phase: 'idle' }, verdict)
+    panel = { ...ui, react, detach, draw, verdict }
   })
 }
 
@@ -122,7 +159,8 @@ export interface MountedBadge {
 export function mountBadge(
   anchor: Element,
   state: BadgeState,
-  verdict: OriginVerdict | null
+  verdict: OriginVerdict | null,
+  panelOptions: PanelOptions = {}
 ): MountedBadge | null {
   // Idempotent: a second injection of the content script, or a re-run over a tile that
   // already has one, must not stack badges.
@@ -152,7 +190,7 @@ export function mountBadge(
     react.render(
       <StrictMode>
         <ErrorBoundary onFail={remove}>
-          <Badge state={state} onOpen={() => openPanel(ui.host, verdict)} />
+          <Badge state={state} onOpen={() => openPanel(ui.host, verdict, panelOptions)} />
         </ErrorBoundary>
       </StrictMode>
     )
