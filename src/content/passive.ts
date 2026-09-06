@@ -2,7 +2,9 @@ import { extractOriginFields } from './adapters/extract'
 import { extractIdentity } from './adapters/identity'
 import { aggregate, resolveOrigin } from '../shared/origin'
 import { marketplaceFromHostname } from '../shared/marketplaces'
+import { isSourceEnabled } from '../shared/settings'
 import type { OriginCache } from '../shared/cache'
+import type { Settings } from '../shared/settings'
 import type { Evidence, OriginVerdict, ProductKey } from '../shared/origin'
 import type { OriginField } from './adapters/extract'
 
@@ -38,7 +40,7 @@ export function fieldToEvidence(field: OriginField, url: string, at: string): Ev
   return {
     kind: field.kind,
     country,
-    sourceId: field.sectionId ?? 'amazon-page',
+    sourceId: field.sourceId,
     sourceLabel: field.label,
     url,
     quote: field.rawText,
@@ -81,7 +83,8 @@ export async function runPassiveTier(
   url: string,
   hostname: string,
   cache: OriginCache,
-  now: () => Date = () => new Date()
+  now: () => Date = () => new Date(),
+  settings?: Settings
 ): Promise<PassiveResult | null> {
   const marketplace = marketplaceFromHostname(hostname)
   const asin = productAsin(url)
@@ -98,7 +101,10 @@ export async function runPassiveTier(
   if (cached) return { productKey, verdict: cached, fromCache: true }
 
   const at = now().toISOString()
-  const evidence = extractOriginFields(doc).map((field) => fieldToEvidence(field, url, at))
+  const evidence = extractOriginFields(doc)
+    .map((field) => fieldToEvidence(field, url, at))
+    // A source the user has switched off contributes nothing — not weaker evidence, none.
+    .filter((item) => !settings || isSourceEnabled(settings, item.sourceId))
   const verdict = aggregate({ productKey, evidence, searchedDeep: false })
 
   // A page with no origin field is cached on the shorter miss TTL — otherwise the most
