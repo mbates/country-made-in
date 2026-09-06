@@ -85,18 +85,30 @@ organisation the **brand owner** registered with — not where anything was made
 made in China" is a widely repeated myth, and repeating it would be exactly the class of
 confident wrong answer this project exists to avoid.
 
-## Narrow the optional permission once sources are known
+## Host permissions
 
-The manifest currently declares `optional_host_permissions: ["https://*/*"]` — every
-HTTPS site. That was written in plan 01 before any source existed, and it is the broadest
-declaration possible.
+The manifest declares **no** `optional_host_permissions`. With an empty source registry
+there are no origins to ask for, and the minimal declaration for zero origins is none —
+carrying `https://*/*` in the meantime would have every intermediate build tell a Chrome
+Web Store reviewer the extension "may request access to all websites", with no answer to
+why. A test asserts the manifest stays clean while the registry is empty.
 
-Nothing is *requested* today: with an empty registry the button asks for no origins at
-all. But the declaration is what a Chrome Web Store reviewer reads, and "this extension
-may request access to every website" is a question worth not having to answer.
+When a source passes the gate, add exactly the origins it needs, and nothing wider.
 
-Once sources pass the gate, replace it with exactly the origins those sources need. That
-is a plan 07 blocker as much as a plan 05 one.
+### Where the permission grant happens
+
+`chrome.permissions.request()` needs two things at once: the API, and a user gesture.
+
+| Context | Has the API | Has a gesture |
+| ------- | ----------- | ------------- |
+| Content script | **No** — only `chrome.dom`, `chrome.i18n`, `chrome.storage` and part of `chrome.runtime` | Yes |
+| Service worker | Yes | **No** |
+| Options page / popup | Yes | Yes |
+
+So the grant is made from the **options page**, which is what plan 05-02 meant by
+"offer 'always allow deep search' in options". The button in the panel cannot prompt; the
+service worker checks whether the origins are already held and replies `needs-permission`
+if not, and the panel points the user at settings.
 
 ## Growing the corpus
 

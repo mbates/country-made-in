@@ -27,25 +27,41 @@ async function withBudget<T>(
   outer: AbortSignal | undefined,
   setTimeoutFn: typeof setTimeout,
   clearTimeoutFn: typeof clearTimeout
-): Promise<{ ok: true; value: T } | { ok: false; reason: 'timeout' | 'aborted' | string }> {
+): Promise<{ ok: true; value: T } | { ok: false; reason: 'timeout' | 'aborted' | (string & {}) }> {
   const controller = new AbortController()
   const onOuterAbort = () => controller.abort()
   outer?.addEventListener('abort', onOuterAbort, { once: true })
 
   let timer: ReturnType<typeof setTimeout> | null = null
-  const timedOut = new Promise<'timeout'>((resolve) => {
+  let expired = false
+
+  // A tagged result rather than a sentinel value: racing a `'timeout'` string against an
+  // unconstrained `T` means a source that legitimately resolves to that string is read as
+  // having timed out.
+  const budget = new Promise<{ ok: false; reason: 'timeout' | 'aborted' }>((resolve) => {
     timer = setTimeoutFn(() => {
+      expired = true
       controller.abort()
-      resolve('timeout')
+      resolve({ ok: false, reason: 'timeout' })
     }, timeoutMs)
+
+    // Resolve on the outer abort too, so cancelling does not wait out the full per-source
+    // budget before the worker notices — a 10-second timeout would otherwise keep the
+    // search alive for 10 seconds after the panel closed, and report a spurious timeout.
+    const settleOnAbort = () => resolve({ ok: false, reason: 'aborted' })
+    if (outer?.aborted) settleOnAbort()
+    else outer?.addEventListener('abort', settleOnAbort, { once: true })
   })
 
   try {
-    const result = await Promise.race([run(controller.signal), timedOut])
-    if (result === 'timeout') return { ok: false, reason: 'timeout' }
-    return { ok: true, value: result as T }
+    const result = await Promise.race([
+      run(controller.signal).then((value) => ({ ok: true as const, value })),
+      budget,
+    ])
+    return result
   } catch (error) {
     if (outer?.aborted) return { ok: false, reason: 'aborted' }
+    if (expired) return { ok: false, reason: 'timeout' }
     return { ok: false, reason: error instanceof Error ? error.message : String(error) }
   } finally {
     if (timer !== null) clearTimeoutFn(timer)

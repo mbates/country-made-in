@@ -10,7 +10,7 @@
  *   stated   — did it state an origin
  *   correct  — did that origin match the human-verified ground truth
  *
- * Results go in docs/source-coverage.md. Sources that fail the gate are recorded there
+ * Results go in SOURCE-COVERAGE.md. Sources that fail the gate are recorded there
  * too, so the decision is not re-litigated later.
  *
  * NOTE: this harness reads the corpus and reports what it can measure. It does not fetch

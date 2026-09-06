@@ -1,9 +1,9 @@
 import { OriginCache } from '../shared/cache'
 import { SOURCES } from '../shared/deep/registry'
 import { badgeState } from './badge-state'
-import { describeOrigins } from '../shared/deep/permissions'
 import { extractIdentity } from './adapters/identity'
-import { findTitleAnchor, mountBadge, openPanel, updatePanel } from './inject'
+import { describeOrigins } from '../shared/deep/permissions'
+import { findTitleAnchor, mountBadge, updatePanel } from './inject'
 import { isActiveOn, loadSettings } from '../shared/settings'
 import { marketplaceFromHostname } from '../shared/marketplaces'
 import { observeListing } from './adapters/listing'
@@ -11,7 +11,7 @@ import { productAsin, runPassiveTier } from './passive'
 import { requiredOrigins } from '../shared/deep/orchestrator'
 import { seedFrom, startDeepSearch } from './deep-search'
 import type { DeepSearchHandle } from './deep-search'
-import type { PassiveResult } from './passive'
+import type { ProductSeed } from '../shared/deep/source'
 import type { Settings } from '../shared/settings'
 
 const TAG = '[country-made-in]'
@@ -19,26 +19,38 @@ const TAG = '[country-made-in]'
 /**
  * Wire the wider search to the panel.
  *
- * The permission request has to happen synchronously inside the click handler — awaiting
- * anything first loses the user gesture and Chrome refuses the request — so everything
- * the request needs is computed before the panel is even opened.
+ * Returns `null` when no source is registered — there is nothing to search, and a button
+ * offering a search that cannot happen is worse than no button. It would promise a
+ * permission prompt that never appears and answer "checked 0 sources", which reads as a
+ * search that found nothing rather than one that never ran.
  */
-function deepSearchHandler(result: PassiveResult, identity: ReturnType<typeof extractIdentity>) {
-  const seed = seedFrom(result.productKey, identity)
+function deepSearchHandler(
+  seed: ProductSeed
+): { onSearchWider: () => void; cancel: () => void } | null {
+  if (SOURCES.length === 0) return null
+
   let handle: DeepSearchHandle | null = null
   let checked = 0
   let total = 0
 
-  return () => {
+  const cancel = () => {
     handle?.cancel()
-    checked = 0
-    total = 0
-    updatePanel({ phase: 'searching', total: 0, done: 0 })
+    handle = null
+  }
 
-    handle = startDeepSearch(seed, {
-      onDenied: () => updatePanel({ phase: 'denied' }),
-      onEvent: (event) => {
+  return {
+    cancel,
+    onSearchWider: () => {
+      cancel()
+      checked = 0
+      total = 0
+      updatePanel({ phase: 'searching', total: 0, done: 0 })
+
+      handle = startDeepSearch(seed, (event) => {
         switch (event.type) {
+          case 'needs-permission':
+            updatePanel({ phase: 'needs-permission', hosts: describeOrigins(event.origins) })
+            break
           case 'started':
             total = event.sourceIds.length
             updatePanel({ phase: 'searching', total, done: 0 })
@@ -47,17 +59,17 @@ function deepSearchHandler(result: PassiveResult, identity: ReturnType<typeof ex
             checked += 1
             updatePanel({ phase: 'searching', total, done: checked })
             break
-          case 'done': {
-            const answered = Object.keys(event.verdict.claims).length
-            updatePanel({ phase: 'finished', checked, answered }, event.verdict)
+          case 'done':
+            // Counted from what this search found, not from the merged verdict — the
+            // page may already have supplied a claim, and that is not a deep-tier hit.
+            updatePanel({ phase: 'finished', checked, found: event.foundCount }, event.verdict)
             break
-          }
           case 'error':
             updatePanel({ phase: 'error', reason: event.reason })
             break
         }
-      },
-    })
+      })
+    },
   }
 }
 
@@ -80,11 +92,13 @@ async function runOnProductPage(settings: Settings): Promise<void> {
 
   const identity = extractIdentity(document, location.href)
   const seed = seedFrom(result.productKey, identity)
-  const hosts = describeOrigins(requiredOrigins(SOURCES, seed))
+  const deep = deepSearchHandler(seed)
 
   mountBadge(anchor, badgeState(result.verdict), result.verdict, {
-    onSearchWider: deepSearchHandler(result, identity),
-    searchHosts: hosts,
+    ...(deep ? { onSearchWider: deep.onSearchWider } : {}),
+    searchHosts: describeOrigins(requiredOrigins(SOURCES, seed)),
+    // Closing the panel must stop the search, or it runs on with nothing to report to.
+    ...(deep ? { onPanelClose: deep.cancel } : {}),
   })
 }
 
@@ -110,5 +124,3 @@ async function start(): Promise<void> {
 }
 
 void start().catch((error: unknown) => console.warn(`${TAG} failed to start`, error))
-
-export { openPanel }

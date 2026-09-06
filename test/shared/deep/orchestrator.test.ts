@@ -167,7 +167,9 @@ describe('budgets', () => {
         },
       })
     await runDeepSearch(['a', 'b', 'c', 'd', 'e', 'f'].map(slow), SEED, { concurrency: 2 })
-    expect(peak).toBeLessThanOrEqual(2)
+    // Both bounds: `toBeLessThanOrEqual` alone passes for a cap stuck at 1, which is the
+    // regression that would actually hurt — six sequential network calls.
+    expect(peak).toBe(2)
   })
 })
 
@@ -238,5 +240,47 @@ describe('requiredOrigins', () => {
 
   it('is empty when nothing applies, so no prompt is shown', () => {
     expect(requiredOrigins([source({ id: 'a', applies: () => false })], SEED)).toEqual([])
+  })
+})
+
+describe('regressions from review of PR #20', () => {
+  it('gives up promptly when aborted, rather than waiting out the budget', async () => {
+    // A ten-second per-source budget would otherwise keep a cancelled search alive for
+    // ten seconds after the panel closed, then report a timeout that never happened.
+    const controller = new AbortController()
+    const started = Date.now()
+
+    const running = runDeepSearch(
+      [source({ id: 'slow', search: () => new Promise(() => {}) })],
+      SEED,
+      { timeoutMs: 5000, signal: controller.signal }
+    )
+    setTimeout(() => controller.abort(), 10)
+    const outcomes = await running
+
+    expect(Date.now() - started).toBeLessThan(2000)
+    expect(outcomes.some((o) => o.status === 'timeout')).toBe(false)
+  })
+
+  it('does not mistake a source that resolves to the string "timeout"', async () => {
+    // withBudget used to race a 'timeout' sentinel against an unconstrained T.
+    const odd = source({
+      id: 'odd',
+      search: async () => 'timeout' as unknown as never,
+    })
+    const [outcome] = await runDeepSearch([odd], SEED, { timeoutMs: 500 })
+    expect(outcome.status).not.toBe('timeout')
+  })
+
+  it('calls applies() once per source', () => {
+    let calls = 0
+    const counted = source({
+      id: 'counted',
+      applies: () => {
+        calls += 1
+        return true
+      },
+    })
+    return runDeepSearch([counted], SEED).then(() => expect(calls).toBe(1))
   })
 })

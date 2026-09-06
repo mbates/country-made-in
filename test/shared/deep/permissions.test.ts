@@ -1,10 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
-import { describeOrigins, hasOrigins, requestOrigins } from '../../../src/shared/deep/permissions'
+import {
+  describeOrigins,
+  hasOrigins,
+  requestOrigins,
+  revokeOrigins,
+} from '../../../src/shared/deep/permissions'
 import type { PermissionApi } from '../../../src/shared/deep/permissions'
 
 const api = (over: Partial<PermissionApi> = {}): PermissionApi => ({
   contains: async () => false,
   request: async () => true,
+  remove: async () => true,
   ...over,
 })
 
@@ -28,9 +34,9 @@ describe('permission requests', () => {
     )
   })
 
-  it('degrades to "not granted" when Chrome rejects the call', async () => {
-    // Chrome rejects a request made without a user gesture. That is a caller bug, but it
-    // must not break the panel.
+  it('degrades to "not granted" when the API is unavailable or the call is rejected', async () => {
+    // chrome.permissions does not exist in a content script, and Chrome rejects a request
+    // made outside a user gesture. Either is a caller bug that must not break the UI.
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const denied = api({
       request: async () => {
@@ -66,5 +72,32 @@ describe('describeOrigins', () => {
       'a.test',
       'b.test',
     ])
+  })
+})
+
+describe('revokeOrigins', () => {
+  it('gives the origins back', async () => {
+    const remove = vi.fn(async () => true)
+    await revokeOrigins(['https://a.test/*'], api({ remove }))
+    expect(remove).toHaveBeenCalledWith({ origins: ['https://a.test/*'] })
+  })
+
+  it('is a no-op when there is nothing to give back', async () => {
+    const remove = vi.fn(async () => true)
+    expect(await revokeOrigins([], api({ remove }))).toBe(true)
+    expect(remove).not.toHaveBeenCalled()
+  })
+})
+
+describe('hasOrigins failures', () => {
+  it('reports not-granted rather than throwing', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const broken = api({
+      contains: async () => {
+        throw new Error('no such API')
+      },
+    })
+    expect(await hasOrigins(['https://a.test/*'], broken)).toBe(false)
+    vi.restoreAllMocks()
   })
 })

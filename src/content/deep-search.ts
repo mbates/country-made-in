@@ -1,7 +1,4 @@
 import { DEEP_SEARCH_PORT } from '../shared/messages'
-import { requestOrigins } from '../shared/deep/permissions'
-import { requiredOrigins } from '../shared/deep/orchestrator'
-import { SOURCES } from '../shared/deep/registry'
 import type { DeepSearchEvent, DeepSearchRequest } from '../shared/messages'
 import type { ProductSeed } from '../shared/deep/source'
 
@@ -9,52 +6,40 @@ export interface DeepSearchHandle {
   cancel: () => void
 }
 
-export interface DeepSearchCallbacks {
-  onEvent: (event: DeepSearchEvent) => void
-  /** Called when the user declined the permission prompt. */
-  onDenied: () => void
-}
-
 /**
  * Start a wider search.
  *
- * **Call this synchronously from the click handler.** `chrome.permissions.request()`
- * needs a user gesture, and awaiting anything first loses it — which is why the origins
- * are computed up front rather than fetched.
- *
- * Refusal is a normal outcome: nothing is torn down, the passive verdict stays on
- * screen, and the button remains available for next time.
+ * No permission request happens here, and none can: a content script cannot reach
+ * `chrome.permissions` at all. The service worker checks whether the origins are already
+ * granted and replies `needs-permission` if not; the grant itself is made from the
+ * options page, which is the only context with both the API and a user gesture.
  */
 export function startDeepSearch(
   seed: ProductSeed,
-  { onEvent, onDenied }: DeepSearchCallbacks
+  onEvent: (event: DeepSearchEvent) => void
 ): DeepSearchHandle {
-  const origins = requiredOrigins(SOURCES, seed)
-  let port: chrome.runtime.Port | null = null
-  let cancelled = false
+  let port: chrome.runtime.Port | null = chrome.runtime.connect({ name: DEEP_SEARCH_PORT })
 
-  void requestOrigins(origins).then((granted) => {
-    if (cancelled) return
-    if (!granted) {
-      onDenied()
-      return
-    }
-
-    port = chrome.runtime.connect({ name: DEEP_SEARCH_PORT })
-    port.onMessage.addListener((event: DeepSearchEvent) => onEvent(event))
-    port.onDisconnect.addListener(() => {
+  port.onMessage.addListener((event: DeepSearchEvent) => {
+    onEvent(event)
+    // Nothing more will arrive after a terminal event, so let the port go.
+    if (event.type === 'done' || event.type === 'error' || event.type === 'needs-permission') {
+      port?.disconnect()
       port = null
-    })
-    const start: DeepSearchRequest = { type: 'start', seed }
-    port.postMessage(start)
+    }
   })
+  port.onDisconnect.addListener(() => {
+    port = null
+  })
+
+  const start: DeepSearchRequest = { type: 'start', seed }
+  port.postMessage(start)
 
   return {
     cancel: () => {
-      cancelled = true
       if (!port) return
-      const cancel: DeepSearchRequest = { type: 'cancel' }
       try {
+        const cancel: DeepSearchRequest = { type: 'cancel' }
         port.postMessage(cancel)
         port.disconnect()
       } catch {

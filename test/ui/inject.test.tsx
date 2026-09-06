@@ -315,11 +315,16 @@ describe('regressions from review of PR #14', () => {
     document.body.append(container)
     act(() => {
       createRoot(container).render(
-        <Panel verdict={verdict()} onClose={() => {}} onSearchWider={() => {}} />
+        <Panel
+          verdict={verdict()}
+          onClose={() => {}}
+          onSearchWider={() => {}}
+          searchHosts={['fcc.report']}
+        />
       )
     })
     expect(container.textContent).toContain('Search wider')
-    expect(container.textContent).toContain('Chrome will ask permission')
+    expect(container.textContent).toContain('Chrome will ask permission the first time')
   })
 
   it('refuses a javascript: url rather than linking to it', () => {
@@ -368,12 +373,13 @@ describe('the wider search in the panel', () => {
     open({ onSearchWider: () => {}, searchHosts: ['fcc.report', 'wikidata.org'] })
     const text = shadowText(PANEL_ID)
     expect(text).toContain('fcc.report, wikidata.org')
-    expect(text).toContain('Chrome will ask permission first')
+    expect(text).toContain('Chrome will ask permission the first time')
   })
 
-  it('falls back to generic copy when no host list is known', () => {
+  it('promises no permission prompt when the search needs no origins', () => {
+    // Claiming Chrome will ask, when it will not, is a promise the extension cannot keep.
     open({ onSearchWider: () => {} })
-    expect(shadowText(PANEL_ID)).toContain('Chrome will ask permission to read other sites')
+    expect(shadowText(PANEL_ID)).not.toMatch(/Chrome will ask permission/i)
   })
 
   it('runs the handler on click', () => {
@@ -401,19 +407,19 @@ describe('the wider search in the panel', () => {
     expect((button as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('treats a refusal as a normal outcome and keeps the passive answer', () => {
+  it('sends the user to settings when permission is missing, without reading anything', () => {
     open({ onSearchWider: () => {} })
-    act(() => updatePanel({ phase: 'denied' }))
+    act(() => updatePanel({ phase: 'needs-permission', hosts: ['fcc.report'] }))
     const text = shadowText(PANEL_ID)
-    expect(text).toContain('Permission declined')
-    expect(text).toContain('try again')
+    expect(text).toContain('needs permission to read fcc.report')
+    expect(text).toContain('nothing has been read')
     // The verdict the page gave us is still on screen.
     expect(text).toContain('China')
   })
 
   it('reports "nothing found" as an answer, not a failure', () => {
     open({ onSearchWider: () => {} })
-    act(() => updatePanel({ phase: 'finished', checked: 6, answered: 0 }))
+    act(() => updatePanel({ phase: 'finished', checked: 6, found: 0 }))
     const text = shadowText(PANEL_ID)
     expect(text).toContain('Checked 6 sources; none stated an origin')
     expect(text).not.toMatch(/failed|error/i)
@@ -421,13 +427,13 @@ describe('the wider search in the panel', () => {
 
   it('gets the singular right for one source', () => {
     open({ onSearchWider: () => {} })
-    act(() => updatePanel({ phase: 'finished', checked: 1, answered: 0 }))
+    act(() => updatePanel({ phase: 'finished', checked: 1, found: 0 }))
     expect(shadowText(PANEL_ID)).toContain('Checked 1 source;')
   })
 
   it('says nothing about coverage when the search did find something', () => {
     open({ onSearchWider: () => {} })
-    act(() => updatePanel({ phase: 'finished', checked: 6, answered: 2 }))
+    act(() => updatePanel({ phase: 'finished', checked: 6, found: 2 }))
     expect(shadowText(PANEL_ID)).not.toContain('none stated an origin')
   })
 
@@ -441,6 +447,6 @@ describe('the wider search in the panel', () => {
   it('ignores an update after the panel closed', () => {
     open({ onSearchWider: () => {} })
     act(() => closePanel())
-    expect(() => updatePanel({ phase: 'finished', checked: 1, answered: 0 })).not.toThrow()
+    expect(() => updatePanel({ phase: 'finished', checked: 1, found: 0 })).not.toThrow()
   })
 })

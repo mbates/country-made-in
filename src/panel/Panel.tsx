@@ -90,8 +90,10 @@ function EvidenceRow({ item }: { item: Evidence }) {
 export type DeepSearchStatus =
   | { phase: 'idle' }
   | { phase: 'searching'; total: number; done: number }
-  | { phase: 'denied' }
-  | { phase: 'finished'; checked: number; answered: number }
+  /** The origins are not granted. The grant is made from the options page. */
+  | { phase: 'needs-permission'; hosts: readonly string[] }
+  /** `found` counts what *this* search turned up, not the merged verdict's claims. */
+  | { phase: 'finished'; checked: number; found: number }
   | { phase: 'error'; reason: string }
 
 export interface PanelProps {
@@ -154,23 +156,22 @@ export function Panel({ verdict, onClose, onSearchWider, deep, searchHosts }: Pa
           </button>
 
           {/* Stated before Chrome's prompt appears, not after — the prompt is the
-              consequence of this button, and the user should know that first. */}
-          {deep?.phase !== 'searching' && (
+              consequence of enabling this, and the user should know that first. */}
+          {deep?.phase !== 'searching' && searchHosts && searchHosts.length > 0 && (
             <p className="mt-1 text-xs text-slate-500">
-              {searchHosts && searchHosts.length > 0
-                ? `Looks beyond this page, reading ${searchHosts.join(', ')}. Chrome will ask permission first, and the search runs only after you allow it.`
-                : 'Looks beyond this page. Chrome will ask permission to read other sites, and the search runs only after you allow it.'}
+              Reads {searchHosts.join(', ')} to look beyond this page. Chrome will ask permission
+              the first time, and nothing is read until you allow it.
             </p>
           )}
 
-          {deep?.phase === 'denied' && (
+          {deep?.phase === 'needs-permission' && (
             <p className="mt-1 text-xs text-slate-600">
-              Permission declined, so nothing was read. What the page itself says is still shown
-              above, and you can try again whenever you like.
+              This needs permission to read {deep.hosts.join(', ')}. Turn on the wider search in the
+              extension's settings to grant it — nothing has been read.
             </p>
           )}
 
-          {deep?.phase === 'finished' && deep.answered === 0 && (
+          {deep?.phase === 'finished' && deep.found === 0 && (
             // Not a failure. "We checked and nobody says" is a real answer, and dressing
             // it up as an error would push the user toward trusting a worse one.
             <p className="mt-1 text-xs text-slate-600">

@@ -17,5 +17,8 @@ export type DeepSearchRequest = { type: 'start'; seed: ProductSeed } | { type: '
 export type DeepSearchEvent =
   | { type: 'started'; sourceIds: string[] }
   | { type: 'outcome'; outcome: SourceOutcome }
-  | { type: 'done'; verdict: OriginVerdict }
+  /** `foundCount` is what *this* search turned up, not the merged total. */
+  | { type: 'done'; verdict: OriginVerdict; foundCount: number }
+  /** The origins have not been granted. The grant is made from the options page. */
+  | { type: 'needs-permission'; origins: string[] }
   | { type: 'error'; reason: string }

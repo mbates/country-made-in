@@ -43,6 +43,7 @@ function attempt<T>(what: string, run: () => T): T | null {
 interface OpenPanel extends UiHost {
   react: Root
   detach: () => void
+  onClose?: () => void
   draw: (deep: DeepSearchStatus, verdict: OriginVerdict | null) => void
   verdict: OriginVerdict | null
 }
@@ -63,6 +64,7 @@ export function closePanel(): void {
   panel = null
   attempt('panel teardown', () => {
     current.detach()
+    current.onClose?.()
     current.react.unmount()
     current.remove()
   })
@@ -71,6 +73,8 @@ export function closePanel(): void {
 export interface PanelOptions {
   onSearchWider?: () => void
   searchHosts?: readonly string[]
+  /** Called when the panel closes, so an in-flight search can be cancelled. */
+  onPanelClose?: () => void
 }
 
 /** Open the detail panel next to `anchor`. Replaces any panel already open. */
@@ -142,7 +146,7 @@ export function openPanel(
       )
 
     draw({ phase: 'idle' }, verdict)
-    panel = { ...ui, react, detach, draw, verdict }
+    panel = { ...ui, react, detach, draw, verdict, onClose: options.onPanelClose }
   })
 }
 

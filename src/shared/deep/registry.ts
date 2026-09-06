@@ -5,7 +5,7 @@ import type { OriginSource } from './source'
  *
  * **Deliberately empty.** Plan 05's first story is a gate: measure each candidate's hit
  * rate against the fixture corpus before writing an adapter for it, and record the
- * numbers in `docs/source-coverage.md` so a rejected source is not re-litigated later.
+ * numbers in `SOURCE-COVERAGE.md` so a rejected source is not re-litigated later.
  * The corpus is not yet large enough to run that measurement, so no adapter has earned
  * its place.
  *

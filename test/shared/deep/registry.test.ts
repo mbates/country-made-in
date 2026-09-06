@@ -16,11 +16,28 @@ describe('the source registry', () => {
     expect(requiredOrigins(SOURCES, SEED)).toEqual([])
   })
 
+  // These two are vacuous while the registry is empty — `[].every` is true. They are
+  // kept deliberately: the moment a source is added they start doing real work, and
+  // writing them then is exactly what gets forgotten.
   it('gives every registered source a unique id', () => {
     expect(new Set(SOURCES.map((s) => s.id)).size).toBe(SOURCES.length)
   })
 
   it('declares at least one origin for every registered source', () => {
     for (const source of SOURCES) expect(source.origins.length).toBeGreaterThan(0)
+  })
+
+  it('keeps the manifest free of optional host permissions while nothing needs them', async () => {
+    // The minimal declaration for zero origins is none. When sources pass the gate, the
+    // origins they need go into optional_host_permissions and this expectation changes
+    // with them — which is the point: it cannot drift silently.
+    const manifest = (await import('../../../src/manifest.json')).default as {
+      optional_host_permissions?: string[]
+    }
+    if (SOURCES.length === 0) {
+      expect(manifest.optional_host_permissions).toBeUndefined()
+    } else {
+      expect(manifest.optional_host_permissions?.length).toBeGreaterThan(0)
+    }
   })
 })
