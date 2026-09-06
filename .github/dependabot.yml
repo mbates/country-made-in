@@ -17,3 +17,10 @@ updates:
           - "react-dom"
           - "@types/react"
           - "@types/react-dom"
+      # @vitejs/plugin-react pins an exact Vite major (6.x requires ^8.0.0 and nothing
+      # else), so an ungrouped bump of either one is unsatisfiable. Same failure shape as
+      # react/react-dom above: the packages are only usable in step.
+      vite:
+        patterns:
+          - "vite"
+          - "@vitejs/plugin-react"
