@@ -7,6 +7,15 @@ updates:
     versioning-strategy: "increase"
     commit-message:
       prefix: "deps"
+    ignore:
+      # TypeScript 7 is the native Go compiler. typescript-eslint refuses it outright
+      # ("typescript-eslint does not support TS 7.0") and its support is blocked on
+      # something structural — ESLint has no async parser support and tsgo is async by
+      # nature — which maintainers put many months out. Linting is a CI gate here, so
+      # the major stays pinned back until typescript-eslint ships support; revisit
+      # typescript-eslint/typescript-eslint#10940.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       # react and react-dom must move together or React throws #527 at mount and the
       # page renders blank. save-exact=true pins both, so an ungrouped bump of one is
